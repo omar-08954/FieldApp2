@@ -1,52 +1,25 @@
 import streamlit as st
 
-from database.database import (
-    add_user,
-    get_all_users
+from database.database import add_user
+
+# ======================================
+# عنوان الصفحة
+# ======================================
+
+st.title("👔 إنشاء حساب مدير")
+
+st.info(
+    "يمكنك إنشاء أي عدد من حسابات المديرين من هذه الصفحة"
 )
 
 # ======================================
-# التحقق من وجود مدير
+# نموذج إنشاء المدير
 # ======================================
 
-users = get_all_users()
-
-admin_exists = False
-
-if users:
-    for user in users:
-
-        user_data = dict(user)
-
-        if user_data["role"] == "admin":
-            admin_exists = True
-            break
-
-# ======================================
-# إذا كان المدير موجوداً
-# ======================================
-
-if admin_exists:
-
-    st.success("✅ يوجد حساب مدير بالفعل")
-
-    st.info(
-        "يمكنك حذف هذه الصفحة من المشروع الآن"
-    )
-
-    st.stop()
-
-# ======================================
-# إنشاء المدير الأول
-# ======================================
-
-st.title("👔 إنشاء حساب المدير الأول")
-
-st.warning(
-    "⚠️ هذه الصفحة تعمل مرة واحدة فقط"
-)
-
-with st.form("create_admin_form"):
+with st.form(
+    "create_admin_form",
+    clear_on_submit=True
+):
 
     fullname = st.text_input(
         "الاسم الكامل"
@@ -74,12 +47,22 @@ with st.form("create_admin_form"):
         use_container_width=True
     )
 
+# ======================================
+# حفظ المدير
+# ======================================
+
 if submitted:
 
     if not fullname or not username or not password:
 
         st.warning(
             "⚠️ يرجى تعبئة جميع الحقول"
+        )
+
+    elif len(password) < 4:
+
+        st.error(
+            "❌ يجب أن تكون كلمة المرور 4 أحرف على الأقل"
         )
 
     else:
@@ -100,13 +83,22 @@ if submitted:
 
             st.balloons()
 
-            st.info(
-                "يمكنك الآن تسجيل الدخول وحذف هذه الصفحة إذا أردت"
-            )
-
-        except Exception as e:
+        except Exception:
 
             st.error(
-                f"❌ حدث خطأ: {e}"
+                "❌ اسم المستخدم مستخدم مسبقاً"
             )
-            
+
+# ======================================
+# العودة للصفحة الرئيسية
+# ======================================
+
+st.divider()
+
+if st.button(
+    "🏠 العودة للرئيسية",
+    width="stretch"
+):
+
+    st.switch_page("app.py")
+    
