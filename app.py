@@ -95,7 +95,7 @@ if st.session_state.logged_in:
 
     st.markdown("---")
 
-    if st.session_state.role == "admin":
+if st.session_state.role == "admin":
 
     st.subheader("👔 صلاحيات المدير")
 
