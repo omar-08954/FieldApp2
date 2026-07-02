@@ -1,5 +1,3 @@
-# database/database.py
-
 import sqlite3
 
 DB_NAME = "fieldapp.db"
@@ -314,4 +312,3 @@ def get_all_users():
     conn.close()
 
     return users
-    

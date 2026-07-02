@@ -67,7 +67,7 @@ with st.sidebar:
             st.session_state.username = ""
             st.session_state.role = ""
 
-            st.rerun()
+            st.switch_page("app.py")
 
     else:
 
@@ -134,8 +134,8 @@ password = st.text_input(
 )
 
 if st.button(
-        "🔑 تسجيل الدخول",
-        width="stretch"
+    "🔑 تسجيل الدخول",
+    width="stretch"
 ):
 
     user = login_user(

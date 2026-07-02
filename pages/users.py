@@ -36,8 +36,9 @@ st.title("👥 إدارة المستخدمين")
 st.subheader("➕ إضافة مستخدم جديد")
 
 with st.form(
-        "add_user_form",
-        clear_on_submit=True):
+    "add_user_form",
+    clear_on_submit=True
+):
 
     username = st.text_input(
         "اسم المستخدم"
@@ -139,8 +140,9 @@ if users:
     )
 
     if st.button(
-            "🗑️ حذف المستخدم",
-            use_container_width=True):
+        "🗑️ حذف المستخدم",
+        use_container_width=True
+    ):
 
         delete_user(user_id)
 
@@ -155,7 +157,12 @@ else:
     st.info(
         "لا يوجد مستخدمون"
     )
- st.divider()
+
+# ======================================
+# تسجيل الخروج
+# ======================================
+
+st.divider()
 
 if st.button(
     "🚪 تسجيل الخروج والعودة للرئيسية",
@@ -168,4 +175,4 @@ if st.button(
     st.session_state.role = ""
 
     st.switch_page("app.py")
-       
+    

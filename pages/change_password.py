@@ -62,14 +62,6 @@ if submitted:
             "⚠️ يرجى تعبئة جميع الحقول"
         )
 
-    elif current_password != st.session_state.get(
-            "password", current_password):
-
-        # إذا كنت لا تحفظ كلمة المرور في Session State
-        # يمكنك حذف هذا الشرط أو إنشاء دالة للتحقق من كلمة المرور
-
-        pass
-
     elif new_password != confirm_password:
 
         st.error(
@@ -92,7 +84,12 @@ if submitted:
         st.success(
             "✅ تم تغيير كلمة المرور بنجاح"
         )
- st.divider()
+
+# ======================================
+# تسجيل الخروج
+# ======================================
+
+st.divider()
 
 if st.button(
     "🚪 تسجيل الخروج والعودة للرئيسية",
@@ -105,4 +102,4 @@ if st.button(
     st.session_state.role = ""
 
     st.switch_page("app.py")
-           
+    

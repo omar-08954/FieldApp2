@@ -1,5 +1,4 @@
 import streamlit as st
-
 import pandas as pd
 
 from database.database import (
@@ -45,44 +44,39 @@ if tasks:
     # الإحصائيات
     # ======================================
 
-    col1, col2, col3, col4 = st.columns(4)
+    total_tasks = len(df)
+
+    technical_tasks = len(
+        df[
+            df["status"]
+            .astype(str)
+            .str.contains("تقني", na=False)
+        ]
+    )
+
+    zira_tasks = len(
+        df[
+            df["status"]
+            .astype(str)
+            .str.contains("زيرا", na=False)
+        ]
+    )
+
+    col1, col2, col3 = st.columns(3)
 
     col1.metric(
-        "إجمالي المهام",
-        len(df)
+        "📋 إجمالي المهام",
+        total_tasks
     )
 
     col2.metric(
-        "المكتملة",
-        len(
-            df[
-                df["status"]
-                .astype(str)
-                .str.contains("مكتملة", na=False)
-            ]
-        )
+        "🛠️ مهام تقني",
+        technical_tasks
     )
 
     col3.metric(
-        "قيد التنفيذ",
-        len(
-            df[
-                df["status"]
-                .astype(str)
-                .str.contains("قيد التنفيذ", na=False)
-            ]
-        )
-    )
-
-    col4.metric(
-        "المؤجلة",
-        len(
-            df[
-                df["status"]
-                .astype(str)
-                .str.contains("مؤجلة", na=False)
-            ]
-        )
+        "🔧 مهام زيرا",
+        zira_tasks
     )
 
     st.divider()
@@ -123,24 +117,29 @@ if tasks:
 
         task_number = st.text_input(
             "رقم المهمة",
-            value=selected_task["task_number"]
+            value=str(selected_task["task_number"])
         )
 
         subscription_number = st.text_input(
             "رقم الاشتراك",
-            value=selected_task["subscription_number"]
+            value=str(selected_task["subscription_number"])
         )
 
-        status = st.text_input(
-            "الحالة",
-            value=selected_task["status"]
+        status = st.selectbox(
+            "نوع المهمة",
+            ["تقني", "زيرا"],
+            index=0 if selected_task["status"] == "تقني" else 1
         )
 
-        notes = st.text_input(
+        notes = st.selectbox(
             "حالة المهمة",
-            value=selected_task["notes"]
-            if selected_task["notes"]
-            else ""
+            ["", "عائق", "تم الفحص", "مزال"],
+            index=["", "عائق", "تم الفحص", "مزال"].index(
+                selected_task["notes"]
+            )
+            if selected_task["notes"] in
+            ["", "عائق", "تم الفحص", "مزال"]
+            else 0
         )
 
         submitted = st.form_submit_button(
@@ -210,9 +209,7 @@ if tasks:
 
 else:
 
-    st.info(
-        "لا توجد مهام"
-    )
+    st.info("لا توجد مهام")
 
 # ======================================
 # المستخدمون
@@ -236,9 +233,12 @@ if users:
 
 else:
 
-    st.info(
-        "لا يوجد مستخدمون"
-    )
+    st.info("لا يوجد مستخدمون")
+
+# ======================================
+# تسجيل الخروج
+# ======================================
+
 st.divider()
 
 if st.button(

@@ -19,8 +19,8 @@ if not st.session_state.get("logged_in", False):
 # ======================================
 
 if st.session_state.get("role") not in [
-        "admin",
-        "technician"
+    "admin",
+    "technician"
 ]:
 
     st.error(
@@ -44,8 +44,9 @@ st.success(
 # ======================================
 
 with st.form(
-        "task_form",
-        clear_on_submit=True):
+    "task_form",
+    clear_on_submit=True
+):
 
     task_number = st.text_input(
         "📋 رقم المهمة"
@@ -91,11 +92,12 @@ if submitted:
         )
 
     elif task_exists(
-            st.session_state.fullname,
-            task_number,
-            subscription_number,
-            task_type,
-            notes):
+        st.session_state.fullname,
+        task_number,
+        subscription_number,
+        task_type,
+        notes
+    ):
 
         st.error(
             "❌ هذه المهمة مسجلة مسبقاً"
@@ -122,7 +124,12 @@ if submitted:
 
         # الانتقال مباشرة لتسجيل مهمة جديدة
         st.rerun()
-  st.divider()
+
+# ======================================
+# تسجيل الخروج
+# ======================================
+
+st.divider()
 
 if st.button(
     "🚪 تسجيل الخروج والعودة للرئيسية",
@@ -135,4 +142,4 @@ if st.button(
     st.session_state.role = ""
 
     st.switch_page("app.py")
-          
+    
