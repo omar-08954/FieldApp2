@@ -24,7 +24,7 @@ if st.session_state.get("role") != "admin":
     st.stop()
 
 # ======================================
-# العنوان
+# عنوان الصفحة
 # ======================================
 
 st.title("👥 إدارة المستخدمين")
@@ -109,7 +109,9 @@ users = get_all_users()
 
 if users:
 
-    df = pd.DataFrame(users)
+    df = pd.DataFrame(
+        [dict(user) for user in users]
+    )
 
     st.dataframe(
         df,
@@ -125,18 +127,26 @@ if users:
 
     st.subheader("🗑️ حذف مستخدم")
 
-    user_id = st.selectbox(
+    user_options = {
+        f"{row['fullname']} ({row['username']})": row["id"]
+        for _, row in df.iterrows()
+    }
+
+    selected_user = st.selectbox(
         "اختر المستخدم",
-        df["id"].tolist()
+        list(user_options.keys())
     )
 
-    selected_user = (
-        df[df["id"] == user_id]
+    selected_id = user_options[selected_user]
+
+    selected_row = (
+        df[df["id"] == selected_id]
         .iloc[0]
     )
 
     st.info(
-        f"المستخدم: {selected_user['fullname']}"
+        f"المستخدم المحدد: "
+        f"{selected_row['fullname']}"
     )
 
     if st.button(
@@ -144,13 +154,25 @@ if users:
         use_container_width=True
     ):
 
-        delete_user(user_id)
+        # منع حذف المستخدم الحالي
+        if (
+            selected_row["username"]
+            == st.session_state.username
+        ):
 
-        st.success(
-            "✅ تم حذف المستخدم بنجاح"
-        )
+            st.error(
+                "❌ لا يمكنك حذف حسابك الحالي"
+            )
 
-        st.rerun()
+        else:
+
+            delete_user(selected_id)
+
+            st.success(
+                "✅ تم حذف المستخدم بنجاح"
+            )
+
+            st.rerun()
 
 else:
 
