@@ -255,4 +255,17 @@ def get_all_users():
     conn.close()
 
     return users
-    
+ def change_password(username, new_password):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE users
+        SET password = ?
+        WHERE username = ?
+    """, (new_password, username))
+
+    conn.commit()
+    conn.close()
+       
