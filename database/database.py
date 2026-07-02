@@ -24,24 +24,37 @@ def create_tables():
     conn = get_connection()
     cur = conn.cursor()
 
+    # ======================================
     # جدول المستخدمين
+    # ======================================
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             fullname TEXT NOT NULL,
-            role TEXT NOT NULL,
-            city TEXT NOT NULL
+            role TEXT NOT NULL
         )
     """)
 
+    # إضافة عمود المدينة إذا لم يكن موجوداً
+
+    try:
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN city TEXT DEFAULT 'جدة'"
+        )
+    except:
+        pass
+
+    # ======================================
     # جدول المهام
+    # ======================================
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             technician TEXT NOT NULL,
-            city TEXT NOT NULL,
             task_number TEXT NOT NULL,
             subscription_number TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -49,6 +62,15 @@ def create_tables():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # إضافة عمود المدينة إذا لم يكن موجوداً
+
+    try:
+        cur.execute(
+            "ALTER TABLE tasks ADD COLUMN city TEXT DEFAULT 'جدة'"
+        )
+    except:
+        pass
 
     conn.commit()
     conn.close()
@@ -105,6 +127,11 @@ def add_user(
 
     conn.commit()
     conn.close()
+
+
+# ======================================
+# حذف مستخدم
+# ======================================
 
 def delete_user(user_id):
 
@@ -196,12 +223,14 @@ def add_task(
 
     cur.execute("""
         INSERT INTO tasks
-        (technician,
-         city,
-         task_number,
-         subscription_number,
-         status,
-         notes)
+        (
+            technician,
+            city,
+            task_number,
+            subscription_number,
+            status,
+            notes
+        )
 
         VALUES (?, ?, ?, ?, ?, ?)
     """, (
@@ -215,6 +244,7 @@ def add_task(
 
     conn.commit()
     conn.close()
+
 
 # ======================================
 # تعديل مهمة
@@ -258,10 +288,10 @@ def delete_task(task_id):
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        DELETE FROM tasks
-        WHERE id = ?
-    """, (task_id,))
+    cur.execute(
+        "DELETE FROM tasks WHERE id = ?",
+        (task_id,)
+    )
 
     conn.commit()
     conn.close()
@@ -314,3 +344,4 @@ def get_all_users():
     conn.close()
 
     return users
+    
