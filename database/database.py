@@ -330,3 +330,89 @@ def get_all_users():
     conn.close()
 
     return users
+def add_user(username, password, fullname, role):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO users
+        (username, password, fullname, role)
+        VALUES (?, ?, ?, ?)
+    """, (username, password, fullname, role))
+
+    conn.commit()
+    conn.close()
+
+
+def delete_user(user_id):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM users WHERE id = ?",
+        (user_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def change_password(username, new_password):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE users
+        SET password = ?
+        WHERE username = ?
+    """, (new_password, username))
+
+    conn.commit()
+    conn.close()
+
+
+def update_task(
+        task_id,
+        task_number,
+        subscription_number,
+        status,
+        notes):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE tasks
+        SET task_number = ?,
+            subscription_number = ?,
+            status = ?,
+            notes = ?
+        WHERE id = ?
+    """, (
+        task_number,
+        subscription_number,
+        status,
+        notes,
+        task_id
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def delete_task(task_id):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM tasks WHERE id = ?",
+        (task_id,)
+    )
+
+    conn.commit()
+    conn.close()
+    
