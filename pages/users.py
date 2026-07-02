@@ -99,10 +99,10 @@ if submitted:
 
             st.rerun()
 
-        except Exception:
+        except Exception as e:
 
             st.error(
-                "❌ اسم المستخدم مستخدم مسبقاً"
+                f"❌ {e}"
             )
 
 # ======================================

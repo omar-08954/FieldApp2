@@ -2,7 +2,6 @@ import sqlite3
 
 DB_NAME = "fieldapp.db"
 
-
 # ======================================
 # الاتصال بقاعدة البيانات
 # ======================================
@@ -108,22 +107,52 @@ def add_user(
         password,
         fullname,
         role,
-        city):
+        city="جدة"):
 
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        INSERT INTO users
-        (username, password, fullname, role, city)
-        VALUES (?, ?, ?, ?, ?)
-    """, (
-        username,
-        password,
-        fullname,
-        role,
-        city
-    ))
+    # التحقق من وجود اسم المستخدم
+
+    cur.execute(
+        "SELECT id FROM users WHERE username = ?",
+        (username,)
+    )
+
+    if cur.fetchone():
+
+        conn.close()
+
+        raise Exception(
+            "اسم المستخدم مستخدم بالفعل"
+        )
+
+    try:
+
+        cur.execute("""
+            INSERT INTO users
+            (username, password, fullname, role, city)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            username,
+            password,
+            fullname,
+            role,
+            city
+        ))
+
+    except sqlite3.OperationalError:
+
+        cur.execute("""
+            INSERT INTO users
+            (username, password, fullname, role)
+            VALUES (?, ?, ?, ?)
+        """, (
+            username,
+            password,
+            fullname,
+            role
+        ))
 
     conn.commit()
     conn.close()
@@ -222,8 +251,7 @@ def add_task(
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO tasks
-        (
+        INSERT INTO tasks (
             technician,
             city,
             task_number,
@@ -231,7 +259,6 @@ def add_task(
             status,
             notes
         )
-
         VALUES (?, ?, ?, ?, ?, ?)
     """, (
         technician,
@@ -328,16 +355,30 @@ def get_all_users():
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT
-            id,
-            username,
-            fullname,
-            role,
-            city
-        FROM users
-        ORDER BY fullname
-    """)
+    try:
+
+        cur.execute("""
+            SELECT
+                id,
+                username,
+                fullname,
+                role,
+                city
+            FROM users
+            ORDER BY fullname
+        """)
+
+    except sqlite3.OperationalError:
+
+        cur.execute("""
+            SELECT
+                id,
+                username,
+                fullname,
+                role
+            FROM users
+            ORDER BY fullname
+        """)
 
     users = cur.fetchall()
 
