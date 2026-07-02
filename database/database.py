@@ -1,7 +1,5 @@
 import sqlite3
-from pathlib import Path
 
-# اسم قاعدة البيانات
 DB_NAME = "fieldapp.db"
 
 
@@ -33,7 +31,6 @@ def create_tables():
     """)
 
     # جدول المهام
-    # لاحظ أنه تم إزالة UNIQUE من task_number
     cur.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,6 +51,7 @@ def create_tables():
 # إنشاء المستخدمين الافتراضيين
 # ======================================
 def create_default_users():
+
     users = [
         ("admin", "1234", "أحمد شاهين", "admin"),
         ("hani", "1234", "هاني صلاح", "technician"),
@@ -81,13 +79,15 @@ def create_default_users():
 # تسجيل الدخول
 # ======================================
 def login_user(username, password):
+
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
         SELECT *
         FROM users
-        WHERE username = ? AND password = ?
+        WHERE username = ?
+        AND password = ?
     """, (username, password))
 
     user = cur.fetchone()
@@ -98,26 +98,62 @@ def login_user(username, password):
 
 
 # ======================================
-# إضافة مهمة
+# التحقق من تكرار المهمة بالكامل
 # ======================================
-def add_task(
-    technician,
-    task_number,
-    subscription_number,
-    status,
-    notes
-):
+def task_exists(
+        technician,
+        task_number,
+        subscription_number,
+        status,
+        notes):
+
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO tasks
-        (technician,
-         task_number,
-         subscription_number,
-         status,
-         notes)
+        SELECT id
+        FROM tasks
+        WHERE technician = ?
+        AND task_number = ?
+        AND subscription_number = ?
+        AND status = ?
+        AND IFNULL(notes, '') = IFNULL(?, '')
+    """, (
+        technician,
+        task_number,
+        subscription_number,
+        status,
+        notes
+    ))
 
+    task = cur.fetchone()
+
+    conn.close()
+
+    return task is not None
+
+
+# ======================================
+# إضافة مهمة
+# ======================================
+def add_task(
+        technician,
+        task_number,
+        subscription_number,
+        status,
+        notes):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO tasks (
+            technician,
+            task_number,
+            subscription_number,
+            status,
+            notes
+        )
         VALUES (?, ?, ?, ?, ?)
     """, (
         technician,
@@ -135,6 +171,7 @@ def add_task(
 # جميع المهام
 # ======================================
 def get_all_tasks():
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -155,6 +192,7 @@ def get_all_tasks():
 # مهام فني معين
 # ======================================
 def get_tasks_by_technician(technician):
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -173,18 +211,41 @@ def get_tasks_by_technician(technician):
 
 
 # ======================================
-# جميع المستخدمين
+# مهام اليوم لفني معين
 # ======================================
-def get_all_users():
+def get_today_tasks(technician):
+
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT
-            id,
-            username,
-            fullname,
-            role
+        SELECT *
+        FROM tasks
+        WHERE technician = ?
+        AND DATE(created_at) = DATE('now', 'localtime')
+        ORDER BY id DESC
+    """, (technician,))
+
+    tasks = cur.fetchall()
+
+    conn.close()
+
+    return tasks
+
+
+# ======================================
+# جميع المستخدمين
+# ======================================
+def get_all_users():
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id,
+               username,
+               fullname,
+               role
         FROM users
         ORDER BY fullname
     """)
