@@ -96,9 +96,20 @@ with st.sidebar:
 
 if st.session_state.logged_in:
 
-    st.title(
-        "🏗️ شركة الفكر الصاعد للمقاولات"
-    )
+    # عرض الشعار في الصفحة الرئيسية
+
+    col1, col2 = st.columns([1, 3])
+
+    with col1:
+        st.image(
+            "images/logo.png",
+            width=350
+        )
+
+    with col2:
+        st.title(
+            "شركة الفكر الصاعد للمقاولات"
+        )
 
     st.success(
         f"مرحباً {st.session_state.fullname}"
@@ -117,7 +128,7 @@ if st.session_state.logged_in:
         st.write("📊 Dashboard")
         st.write("👔 لوحة المدير")
         st.write("👥 إدارة المستخدمين")
-        st.write("📑 التقارير")
+        st.write("📑صفحة التقارير")
         st.write("🛠️ صفحة الفني")
         st.write("🔑 تغيير كلمة المرور")
 
@@ -134,18 +145,18 @@ if st.session_state.logged_in:
 # شاشة تسجيل الدخول
 # ======================================
 
-col1, col2 = st.columns([1, 4])
+col1, col2 = st.columns([1, 3])
 
 with col1:
     st.image(
         "images/logo.png",
-        width=350
+        width=150
     )
 
 with col2:
     st.markdown(
         """
-        <h1 style='margin-top:30px;'>
+        <h1 style='margin-top:40px;'>
         شركة الفكر الصاعد للمقاولات
         </h1>
         """,
