@@ -1,83 +1,21 @@
-import sqlite3
+import streamlit as st
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-DB_NAME = "fieldapp.db"
+DATABASE_URL = st.secrets["DATABASE_URL"]
 
-# ======================================
-# الاتصال بقاعدة البيانات
-# ======================================
 
 def get_connection():
 
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
+    return psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=RealDictCursor
+    )
 
-    return conn
-
-
-# ======================================
-# إنشاء الجداول
-# ======================================
 
 def create_tables():
+    pass
 
-    conn = get_connection()
-    cur = conn.cursor()
-
-    # ======================================
-    # جدول المستخدمين
-    # ======================================
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            fullname TEXT NOT NULL,
-            role TEXT NOT NULL
-        )
-    """)
-
-    # إضافة عمود المدينة إذا لم يكن موجوداً
-
-    try:
-        cur.execute(
-            "ALTER TABLE users ADD COLUMN city TEXT DEFAULT 'جدة'"
-        )
-    except:
-        pass
-
-    # ======================================
-    # جدول المهام
-    # ======================================
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            technician TEXT NOT NULL,
-            task_number TEXT NOT NULL,
-            subscription_number TEXT NOT NULL,
-            status TEXT NOT NULL,
-            notes TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # إضافة عمود المدينة إذا لم يكن موجوداً
-
-    try:
-        cur.execute(
-            "ALTER TABLE tasks ADD COLUMN city TEXT DEFAULT 'جدة'"
-        )
-    except:
-        pass
-
-    conn.commit()
-    conn.close()
-
-
-# ======================================
-# تسجيل الدخول
-# ======================================
 
 def login_user(username, password):
 
@@ -87,80 +25,45 @@ def login_user(username, password):
     cur.execute("""
         SELECT *
         FROM users
-        WHERE username = ?
-        AND password = ?
+        WHERE username=%s
+        AND password=%s
     """, (username, password))
 
     user = cur.fetchone()
 
+    cur.close()
     conn.close()
 
     return user
 
-
-# ======================================
-# إضافة مستخدم
-# ======================================
 
 def add_user(
         username,
         password,
         fullname,
         role,
-        city="جدة"):
+        city):
 
     conn = get_connection()
     cur = conn.cursor()
 
-    # التحقق من وجود اسم المستخدم
-
-    cur.execute(
-        "SELECT id FROM users WHERE username = ?",
-        (username,)
-    )
-
-    if cur.fetchone():
-
-        conn.close()
-
-        raise Exception(
-            "اسم المستخدم مستخدم بالفعل"
-        )
-
-    try:
-
-        cur.execute("""
-            INSERT INTO users
-            (username, password, fullname, role, city)
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            username,
-            password,
-            fullname,
-            role,
-            city
-        ))
-
-    except sqlite3.OperationalError:
-
-        cur.execute("""
-            INSERT INTO users
-            (username, password, fullname, role)
-            VALUES (?, ?, ?, ?)
-        """, (
-            username,
-            password,
-            fullname,
-            role
-        ))
+    cur.execute("""
+        INSERT INTO users
+        (username,password,fullname,role,city)
+        VALUES (%s,%s,%s,%s,%s)
+    """, (
+        username,
+        password,
+        fullname,
+        role,
+        city
+    ))
 
     conn.commit()
+
+    cur.close()
     conn.close()
 
-
-# ======================================
-# حذف مستخدم
-# ======================================
 
 def delete_user(user_id):
 
@@ -168,17 +71,34 @@ def delete_user(user_id):
     cur = conn.cursor()
 
     cur.execute(
-        "DELETE FROM users WHERE id = ?",
+        "DELETE FROM users WHERE id=%s",
         (user_id,)
     )
 
     conn.commit()
+
+    cur.close()
     conn.close()
 
 
-# ======================================
-# تغيير كلمة المرور
-# ======================================
+def get_all_users():
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT *
+        FROM users
+        ORDER BY fullname
+    """)
+
+    users = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return users
+
 
 def change_password(username, new_password):
 
@@ -187,20 +107,18 @@ def change_password(username, new_password):
 
     cur.execute("""
         UPDATE users
-        SET password = ?
-        WHERE username = ?
+        SET password=%s
+        WHERE username=%s
     """, (
         new_password,
         username
     ))
 
     conn.commit()
+
+    cur.close()
     conn.close()
 
-
-# ======================================
-# التحقق من تكرار المهمة بالكامل
-# ======================================
 
 def task_exists(
         technician,
@@ -215,11 +133,12 @@ def task_exists(
     cur.execute("""
         SELECT id
         FROM tasks
-        WHERE technician = ?
-        AND task_number = ?
-        AND subscription_number = ?
-        AND status = ?
-        AND IFNULL(notes,'') = IFNULL(?, '')
+        WHERE technician=%s
+        AND task_number=%s
+        AND subscription_number=%s
+        AND status=%s
+        AND COALESCE(notes,'')=
+            COALESCE(%s,'')
     """, (
         technician,
         task_number,
@@ -230,14 +149,11 @@ def task_exists(
 
     task = cur.fetchone()
 
+    cur.close()
     conn.close()
 
     return task is not None
 
-
-# ======================================
-# إضافة مهمة
-# ======================================
 
 def add_task(
         technician,
@@ -251,7 +167,8 @@ def add_task(
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO tasks (
+        INSERT INTO tasks
+        (
             technician,
             city,
             task_number,
@@ -259,7 +176,7 @@ def add_task(
             status,
             notes
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s,%s,%s,%s,%s,%s)
     """, (
         technician,
         city,
@@ -270,12 +187,10 @@ def add_task(
     ))
 
     conn.commit()
+
+    cur.close()
     conn.close()
 
-
-# ======================================
-# تعديل مهمة
-# ======================================
 
 def update_task(
         task_id,
@@ -289,11 +204,11 @@ def update_task(
 
     cur.execute("""
         UPDATE tasks
-        SET task_number = ?,
-            subscription_number = ?,
-            status = ?,
-            notes = ?
-        WHERE id = ?
+        SET task_number=%s,
+            subscription_number=%s,
+            status=%s,
+            notes=%s
+        WHERE id=%s
     """, (
         task_number,
         subscription_number,
@@ -303,12 +218,10 @@ def update_task(
     ))
 
     conn.commit()
+
+    cur.close()
     conn.close()
 
-
-# ======================================
-# حذف مهمة
-# ======================================
 
 def delete_task(task_id):
 
@@ -316,17 +229,15 @@ def delete_task(task_id):
     cur = conn.cursor()
 
     cur.execute(
-        "DELETE FROM tasks WHERE id = ?",
+        "DELETE FROM tasks WHERE id=%s",
         (task_id,)
     )
 
     conn.commit()
+
+    cur.close()
     conn.close()
 
-
-# ======================================
-# جلب جميع المهام
-# ======================================
 
 def get_all_tasks():
 
@@ -341,48 +252,7 @@ def get_all_tasks():
 
     tasks = cur.fetchall()
 
+    cur.close()
     conn.close()
 
     return tasks
-
-
-# ======================================
-# جلب جميع المستخدمين
-# ======================================
-
-def get_all_users():
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    try:
-
-        cur.execute("""
-            SELECT
-                id,
-                username,
-                fullname,
-                role,
-                city
-            FROM users
-            ORDER BY fullname
-        """)
-
-    except sqlite3.OperationalError:
-
-        cur.execute("""
-            SELECT
-                id,
-                username,
-                fullname,
-                role
-            FROM users
-            ORDER BY fullname
-        """)
-
-    users = cur.fetchall()
-
-    conn.close()
-
-    return users
-    
