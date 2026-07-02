@@ -1,12 +1,13 @@
 import sqlite3
+from pathlib import Path
 
+# اسم قاعدة البيانات
 DB_NAME = "fieldapp.db"
 
 
 # ======================================
 # الاتصال بقاعدة البيانات
 # ======================================
-
 def get_connection():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
@@ -16,13 +17,12 @@ def get_connection():
 # ======================================
 # إنشاء الجداول
 # ======================================
-
 def create_tables():
-
     conn = get_connection()
-    c = conn.cursor()
+    cur = conn.cursor()
 
-    c.execute("""
+    # جدول المستخدمين
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
@@ -32,14 +32,16 @@ def create_tables():
         )
     """)
 
-    c.execute("""
+    # جدول المهام
+    # لاحظ أنه تم إزالة UNIQUE من task_number
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             technician TEXT NOT NULL,
-            task_number TEXT UNIQUE NOT NULL,
+            task_number TEXT NOT NULL,
             subscription_number TEXT NOT NULL,
-            task_type TEXT NOT NULL,
-            notes TEXT NOT NULL,
+            status TEXT NOT NULL,
+            notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -50,56 +52,45 @@ def create_tables():
 
 # ======================================
 # إنشاء المستخدمين الافتراضيين
-# يتم التنفيذ مرة واحدة فقط
 # ======================================
-
 def create_default_users():
+    users = [
+        ("admin", "1234", "أحمد شاهين", "admin"),
+        ("hani", "1234", "هاني صلاح", "technician"),
+        ("arslan", "1234", "أرسلان", "technician"),
+        ("omar", "1234", "عمر", "technician"),
+        ("borhan", "1234", "برهان", "technician"),
+        ("qasim", "1234", "قاسم", "technician"),
+    ]
 
     conn = get_connection()
-    c = conn.cursor()
+    cur = conn.cursor()
 
-    # إضافة المستخدمين فقط إذا كان الجدول فارغاً
-    c.execute("SELECT COUNT(*) FROM users")
-    count = c.fetchone()[0]
-
-    if count == 0:
-
-        users = [
-            ("admin", "1234", "أحمد شاهين", "admin"),
-            ("hani", "1234", "هاني صلاح", "technician"),
-            ("arslan", "1234", "أرسلان", "technician"),
-            ("omar", "1234", "عمر", "technician"),
-            ("borhan", "1234", "برهان", "technician"),
-            ("qasim", "1234", "قاسم", "technician")
-        ]
-
-        c.executemany("""
-            INSERT INTO users
+    for username, password, fullname, role in users:
+        cur.execute("""
+            INSERT OR IGNORE INTO users
             (username, password, fullname, role)
             VALUES (?, ?, ?, ?)
-        """, users)
+        """, (username, password, fullname, role))
 
-        conn.commit()
-
+    conn.commit()
     conn.close()
 
 
 # ======================================
 # تسجيل الدخول
 # ======================================
-
 def login_user(username, password):
-
     conn = get_connection()
-    c = conn.cursor()
+    cur = conn.cursor()
 
-    c.execute("""
+    cur.execute("""
         SELECT *
         FROM users
         WHERE username = ? AND password = ?
     """, (username, password))
 
-    user = c.fetchone()
+    user = cur.fetchone()
 
     conn.close()
 
@@ -109,32 +100,30 @@ def login_user(username, password):
 # ======================================
 # إضافة مهمة
 # ======================================
-
 def add_task(
-        technician,
-        task_number,
-        subscription_number,
-        task_type,
-        notes):
-
+    technician,
+    task_number,
+    subscription_number,
+    status,
+    notes
+):
     conn = get_connection()
-    c = conn.cursor()
+    cur = conn.cursor()
 
-    c.execute("""
+    cur.execute("""
         INSERT INTO tasks
-        (
-            technician,
-            task_number,
-            subscription_number,
-            task_type,
-            notes
-        )
+        (technician,
+         task_number,
+         subscription_number,
+         status,
+         notes)
+
         VALUES (?, ?, ?, ?, ?)
     """, (
         technician,
         task_number,
         subscription_number,
-        task_type,
+        status,
         notes
     ))
 
@@ -143,42 +132,19 @@ def add_task(
 
 
 # ======================================
-# التحقق من وجود المهمة
+# جميع المهام
 # ======================================
-
-def task_exists(task_number):
-
-    conn = get_connection()
-    c = conn.cursor()
-
-    c.execute(
-        "SELECT id FROM tasks WHERE task_number = ?",
-        (task_number,)
-    )
-
-    exists = c.fetchone() is not None
-
-    conn.close()
-
-    return exists
-
-
-# ======================================
-# جلب جميع المهام
-# ======================================
-
 def get_all_tasks():
-
     conn = get_connection()
-    c = conn.cursor()
+    cur = conn.cursor()
 
-    c.execute("""
+    cur.execute("""
         SELECT *
         FROM tasks
         ORDER BY id DESC
     """)
 
-    tasks = c.fetchall()
+    tasks = cur.fetchall()
 
     conn.close()
 
@@ -186,142 +152,46 @@ def get_all_tasks():
 
 
 # ======================================
-# تعديل مهمة
+# مهام فني معين
 # ======================================
-
-def update_task(
-        task_id,
-        subscription_number,
-        task_type,
-        notes):
-
+def get_tasks_by_technician(technician):
     conn = get_connection()
-    c = conn.cursor()
+    cur = conn.cursor()
 
-    c.execute("""
-        UPDATE tasks
-        SET
-            subscription_number = ?,
-            task_type = ?,
-            notes = ?
-        WHERE id = ?
-    """, (
-        subscription_number,
-        task_type,
-        notes,
-        task_id
-    ))
+    cur.execute("""
+        SELECT *
+        FROM tasks
+        WHERE technician = ?
+        ORDER BY id DESC
+    """, (technician,))
 
-    conn.commit()
+    tasks = cur.fetchall()
+
     conn.close()
 
-
-# ======================================
-# حذف مهمة
-# ======================================
-
-def delete_task(task_id):
-
-    conn = get_connection()
-    c = conn.cursor()
-
-    c.execute(
-        "DELETE FROM tasks WHERE id = ?",
-        (task_id,)
-    )
-
-    conn.commit()
-    conn.close()
+    return tasks
 
 
 # ======================================
-# جلب جميع المستخدمين
+# جميع المستخدمين
 # ======================================
-
 def get_all_users():
-
     conn = get_connection()
-    c = conn.cursor()
+    cur = conn.cursor()
 
-    c.execute("""
-        SELECT id, username, fullname, role
+    cur.execute("""
+        SELECT
+            id,
+            username,
+            fullname,
+            role
         FROM users
         ORDER BY fullname
     """)
 
-    users = c.fetchall()
+    users = cur.fetchall()
 
     conn.close()
 
     return users
-
-
-# ======================================
-# إضافة مستخدم
-# ======================================
-
-def add_user(
-        username,
-        password,
-        fullname,
-        role):
-
-    conn = get_connection()
-    c = conn.cursor()
-
-    c.execute("""
-        INSERT INTO users
-        (username, password, fullname, role)
-        VALUES (?, ?, ?, ?)
-    """, (
-        username,
-        password,
-        fullname,
-        role
-    ))
-
-    conn.commit()
-    conn.close()
-
-
-# ======================================
-# حذف مستخدم
-# ======================================
-
-def delete_user(user_id):
-
-    conn = get_connection()
-    c = conn.cursor()
-
-    c.execute(
-        "DELETE FROM users WHERE id = ?",
-        (user_id,)
-    )
-
-    conn.commit()
-    conn.close()
-
-
-# ======================================
-# تغيير كلمة المرور
-# ======================================
-
-def change_password(
-        username,
-        new_password):
-
-    conn = get_connection()
-    c = conn.cursor()
-
-    c.execute("""
-        UPDATE users
-        SET password = ?
-        WHERE username = ?
-    """, (
-        new_password,
-        username
-    ))
-
-    conn.commit()
-    conn.close()
     

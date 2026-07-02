@@ -1,113 +1,59 @@
 import streamlit as st
+from database.database import add_task
 
-from database.database import (
-    add_task,
-    task_exists
-)
-
-# ======================================
 # التحقق من تسجيل الدخول
-# ======================================
-
 if not st.session_state.get("logged_in", False):
     st.warning("يرجى تسجيل الدخول أولاً")
     st.stop()
 
-# ======================================
-# زر تسجيل الدخول والخروج
-# ======================================
+st.title("👷 صفحة الفني")
 
-with st.sidebar:
+st.info(f"مرحباً {st.session_state.fullname}")
 
-    st.divider()
+with st.form("task_form", clear_on_submit=True):
 
-    if st.session_state.get("logged_in", False):
+    task_number = st.text_input("📋 رقم المهمة")
 
-        if st.button(
-            "🚪 تسجيل الخروج",
-            use_container_width=True
-        ):
-            st.switch_page("app.py")
+    subscription_number = st.text_input("🔢 رقم الاشتراك")
 
-    else:
+    status = st.selectbox(
+        "📌 حالة المهمة",
+        [
+            "مكتملة",
+            "قيد التنفيذ",
+            "مؤجلة",
+            "العميل غير موجود",
+            "يحتاج مراجعة"
+        ]
+    )
 
-        if st.button(
-            "🔑 تسجيل الدخول",
-            use_container_width=True
-        ):
-            st.switch_page("app.py")
+    notes = st.text_area("📝 حالة المهمة")
 
-# ======================================
-# عنوان الصفحة
-# ======================================
+    submitted = st.form_submit_button(
+        "💾 حفظ المهمة",
+        use_container_width=True
+    )
 
-st.title("🛠️ صفحة الفني")
+    if submitted:
 
-st.write(
-    f"مرحبًا {st.session_state.fullname}"
-)
+        if not task_number or not subscription_number:
 
-st.divider()
+            st.warning("⚠️ يرجى إدخال جميع البيانات المطلوبة")
 
-# ======================================
-# نموذج إضافة مهمة
-# ======================================
+        else:
 
-task_number = st.text_input(
-    "رقم المهمة"
-)
+            try:
 
-subscription_number = st.text_input(
-    "رقم الاشتراك"
-)
+                add_task(
+                    technician=st.session_state.fullname,
+                    task_number=task_number,
+                    subscription_number=subscription_number,
+                    status=status,
+                    notes=notes
+                )
 
-task_type = st.selectbox(
-    "نوع المهمة",
-    [
-        "تقني",
-        "زيرا"
-    ]
-)
+                st.success("✅ تم حفظ المهمة بنجاح")
 
-task_status = st.selectbox(
-    "حالة المهمة",
-    [
-        "تم الفحص",
-        "عائق",
-        "مزال"
-    ]
-)
-
-if st.button(
-    "💾 حفظ المهمة",
-    use_container_width=True
-):
-
-    if not task_number or not subscription_number:
-
-        st.error(
-            "يرجى إدخال جميع البيانات"
-        )
-
-    elif task_exists(task_number):
-
-        st.warning(
-            "رقم المهمة موجود مسبقًا"
-        )
-
-    else:
-
-        add_task(
-            st.session_state.fullname,
-            task_number,
-            subscription_number,
-            task_type,
-            task_status
-        )
-
-        st.success(
-            "تم حفظ المهمة بنجاح"
-        )
-
-        st.rerun()
-        
+            except Exception as e:
+                st.error(f"❌ حدث خطأ: {e}")
+                
