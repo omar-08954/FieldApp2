@@ -104,7 +104,7 @@ if st.session_state.logged_in:
 
         st.image(
             "images/logo.png",
-            width=100
+            width=250
         )
 
     with col2:
