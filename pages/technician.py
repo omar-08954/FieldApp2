@@ -110,7 +110,8 @@ if submitted:
             task_number=task_number,
             subscription_number=subscription_number,
             status=task_type,
-            notes=notes
+            notes=notes,
+            city=st.session_state.city
         )
 
         msg = st.success(
@@ -142,4 +143,3 @@ if st.button(
     st.session_state.role = ""
 
     st.switch_page("app.py")
-    

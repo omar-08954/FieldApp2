@@ -37,6 +37,9 @@ if "username" not in st.session_state:
 if "role" not in st.session_state:
     st.session_state.role = ""
 
+    if "city" not in st.session_state:
+    st.session_state.city = ""
+
 # ======================================
 # الشريط الجانبي
 # ======================================
@@ -66,6 +69,7 @@ with st.sidebar:
             st.session_state.fullname = ""
             st.session_state.username = ""
             st.session_state.role = ""
+            st.session_state.city = ""
 
             st.switch_page("app.py")
 
@@ -149,6 +153,7 @@ if st.button(
         st.session_state.fullname = user["fullname"]
         st.session_state.username = user["username"]
         st.session_state.role = user["role"]
+        st.session_state.city = user["city"]
 
         st.success(
             "✅ تم تسجيل الدخول بنجاح"
@@ -161,4 +166,3 @@ if st.button(
         st.error(
             "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
         )
-        

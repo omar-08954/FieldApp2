@@ -60,6 +60,13 @@ with st.form(
             "technician"
         ]
     )
+    city = st.selectbox(
+    "المدينة",
+    [
+        "مكة",
+        "جدة"
+    ]
+)
 
     submitted = st.form_submit_button(
         "💾 إضافة المستخدم",
@@ -82,7 +89,8 @@ if submitted:
                 username,
                 password,
                 fullname,
-                role
+                role,
+                city
             )
 
             st.success(
@@ -197,4 +205,3 @@ if st.button(
     st.session_state.role = ""
 
     st.switch_page("app.py")
-    

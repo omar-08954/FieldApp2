@@ -31,7 +31,8 @@ def create_tables():
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             fullname TEXT NOT NULL,
-            role TEXT NOT NULL
+            role TEXT NOT NULL,
+            city TEXT NOT NULL
         )
     """)
 
@@ -40,6 +41,7 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             technician TEXT NOT NULL,
+            city TEXT NOT NULL,
             task_number TEXT NOT NULL,
             subscription_number TEXT NOT NULL,
             status TEXT NOT NULL,
@@ -83,29 +85,26 @@ def add_user(
         username,
         password,
         fullname,
-        role):
+        role,
+        city):
 
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
         INSERT INTO users
-        (username, password, fullname, role)
-        VALUES (?, ?, ?, ?)
+        (username, password, fullname, role, city)
+        VALUES (?, ?, ?, ?, ?)
     """, (
         username,
         password,
         fullname,
-        role
+        role,
+        city
     ))
 
     conn.commit()
     conn.close()
-
-
-# ======================================
-# حذف مستخدم
-# ======================================
 
 def delete_user(user_id):
 
@@ -186,6 +185,7 @@ def task_exists(
 
 def add_task(
         technician,
+        city,
         task_number,
         subscription_number,
         status,
@@ -197,14 +197,16 @@ def add_task(
     cur.execute("""
         INSERT INTO tasks
         (technician,
+         city,
          task_number,
          subscription_number,
          status,
          notes)
 
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
     """, (
         technician,
+        city,
         task_number,
         subscription_number,
         status,
@@ -213,7 +215,6 @@ def add_task(
 
     conn.commit()
     conn.close()
-
 
 # ======================================
 # تعديل مهمة
@@ -302,7 +303,8 @@ def get_all_users():
             id,
             username,
             fullname,
-            role
+            role,
+            city
         FROM users
         ORDER BY fullname
     """)
