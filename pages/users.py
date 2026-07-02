@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 
 from database.database import (
-    get_all_users,
     add_user,
-    delete_user
+    delete_user,
+    get_all_users
 )
 
 # ======================================
@@ -15,12 +15,16 @@ if not st.session_state.get("logged_in", False):
     st.warning("يرجى تسجيل الدخول أولاً")
     st.stop()
 
+# ======================================
+# السماح للمدير فقط
+# ======================================
+
 if st.session_state.get("role") != "admin":
     st.error("ليس لديك صلاحية للوصول لهذه الصفحة")
     st.stop()
 
 # ======================================
-# عنوان الصفحة
+# العنوان
 # ======================================
 
 st.title("👥 إدارة المستخدمين")
@@ -31,56 +35,72 @@ st.title("👥 إدارة المستخدمين")
 
 st.subheader("➕ إضافة مستخدم جديد")
 
-with st.form("add_user_form", clear_on_submit=True):
+with st.form(
+        "add_user_form",
+        clear_on_submit=True):
 
-    username = st.text_input("اسم المستخدم")
+    username = st.text_input(
+        "اسم المستخدم"
+    )
+
     password = st.text_input(
         "كلمة المرور",
         type="password"
     )
 
-    fullname = st.text_input("الاسم الكامل")
+    fullname = st.text_input(
+        "الاسم الكامل"
+    )
 
     role = st.selectbox(
         "الصلاحية",
-        ["admin", "technician"]
+        [
+            "admin",
+            "technician"
+        ]
     )
 
     submitted = st.form_submit_button(
-        "💾 إضافة المستخدم"
+        "💾 إضافة المستخدم",
+        use_container_width=True
     )
 
-    if submitted:
+if submitted:
 
-        if not username or not password or not fullname:
-            st.warning("يرجى تعبئة جميع الحقول")
+    if not username or not password or not fullname:
 
-        else:
+        st.warning(
+            "⚠️ يرجى تعبئة جميع الحقول"
+        )
 
-            try:
-                add_user(
-                    username,
-                    password,
-                    fullname,
-                    role
-                )
+    else:
 
-                st.success(
-                    "✅ تم إضافة المستخدم بنجاح"
-                )
+        try:
 
-                st.rerun()
+            add_user(
+                username,
+                password,
+                fullname,
+                role
+            )
 
-            except Exception:
-                st.error(
-                    "❌ اسم المستخدم مستخدم مسبقاً"
-                )
+            st.success(
+                "✅ تم إضافة المستخدم بنجاح"
+            )
 
-st.divider()
+            st.rerun()
+
+        except Exception:
+
+            st.error(
+                "❌ اسم المستخدم مستخدم مسبقاً"
+            )
 
 # ======================================
 # عرض المستخدمين
 # ======================================
+
+st.divider()
 
 st.subheader("📋 جميع المستخدمين")
 
@@ -92,7 +112,8 @@ if users:
 
     st.dataframe(
         df,
-        use_container_width=True
+        use_container_width=True,
+        hide_index=True
     )
 
     st.divider()
@@ -108,18 +129,18 @@ if users:
         df["id"].tolist()
     )
 
-    selected_user = df[
-        df["id"] == user_id
-    ].iloc[0]
+    selected_user = (
+        df[df["id"] == user_id]
+        .iloc[0]
+    )
 
     st.info(
         f"المستخدم: {selected_user['fullname']}"
     )
 
     if st.button(
-        "🗑️ حذف المستخدم",
-        use_container_width=True
-    ):
+            "🗑️ حذف المستخدم",
+            use_container_width=True):
 
         delete_user(user_id)
 
@@ -130,5 +151,8 @@ if users:
         st.rerun()
 
 else:
-    st.info("لا يوجد مستخدمون")
+
+    st.info(
+        "لا يوجد مستخدمون"
+    )
     

@@ -1,13 +1,12 @@
-# pages/admin.py
-
 import streamlit as st
+
 import pandas as pd
 
 from database.database import (
     get_all_tasks,
     get_all_users,
-    delete_task,
-    update_task
+    update_task,
+    delete_task
 )
 
 # ======================================
@@ -18,8 +17,12 @@ if not st.session_state.get("logged_in", False):
     st.warning("يرجى تسجيل الدخول أولاً")
     st.stop()
 
+# ======================================
+# السماح للمدير فقط
+# ======================================
+
 if st.session_state.get("role") != "admin":
-    st.error("ليس لديك صلاحية الوصول لهذه الصفحة")
+    st.error("ليس لديك صلاحية للوصول لهذه الصفحة")
     st.stop()
 
 # ======================================
@@ -52,31 +55,40 @@ if tasks:
     col2.metric(
         "المكتملة",
         len(
-            df[df["status"].astype(str)
-            .str.contains("مكتملة", na=False)]
+            df[
+                df["status"]
+                .astype(str)
+                .str.contains("مكتملة", na=False)
+            ]
         )
     )
 
     col3.metric(
         "قيد التنفيذ",
         len(
-            df[df["status"].astype(str)
-            .str.contains("قيد التنفيذ", na=False)]
+            df[
+                df["status"]
+                .astype(str)
+                .str.contains("قيد التنفيذ", na=False)
+            ]
         )
     )
 
     col4.metric(
         "المؤجلة",
         len(
-            df[df["status"].astype(str)
-            .str.contains("مؤجلة", na=False)]
+            df[
+                df["status"]
+                .astype(str)
+                .str.contains("مؤجلة", na=False)
+            ]
         )
     )
 
     st.divider()
 
     # ======================================
-    # عرض جميع المهام
+    # عرض المهام
     # ======================================
 
     st.subheader("📋 جميع المهام")
@@ -131,11 +143,11 @@ if tasks:
             else ""
         )
 
-        update_btn = st.form_submit_button(
+        submitted = st.form_submit_button(
             "💾 حفظ التعديلات"
         )
 
-        if update_btn:
+        if submitted:
 
             update_task(
                 selected_id,
@@ -146,7 +158,7 @@ if tasks:
             )
 
             st.success(
-                "✅ تم تحديث المهمة بنجاح"
+                "✅ تم تعديل المهمة بنجاح"
             )
 
             st.rerun()
@@ -198,7 +210,9 @@ if tasks:
 
 else:
 
-    st.info("لا توجد مهام")
+    st.info(
+        "لا توجد مهام"
+    )
 
 # ======================================
 # المستخدمون
@@ -222,5 +236,6 @@ if users:
 
 else:
 
-    st.info("لا يوجد مستخدمون")
-    
+    st.info(
+        "لا يوجد مستخدمون"
+    )

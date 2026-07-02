@@ -2,7 +2,6 @@ import streamlit as st
 
 from database.database import (
     create_tables,
-    create_default_users,
     login_user
 )
 
@@ -17,11 +16,10 @@ st.set_page_config(
 )
 
 # ======================================
-# إنشاء الجداول والمستخدمين
+# إنشاء الجداول
 # ======================================
 
 create_tables()
-create_default_users()
 
 # ======================================
 # Session State
@@ -52,7 +50,7 @@ with st.sidebar:
     if st.session_state.get("logged_in", False):
 
         st.success(
-            f"مرحبًا {st.session_state.fullname}"
+            f"مرحباً {st.session_state.fullname}"
         )
 
         st.info(
@@ -73,18 +71,22 @@ with st.sidebar:
 
     else:
 
-        st.info("يرجى تسجيل الدخول")
+        st.info(
+            "يرجى تسجيل الدخول"
+        )
 
 # ======================================
-# منع الوصول بدون تسجيل دخول
+# الصفحة الرئيسية بعد تسجيل الدخول
 # ======================================
 
 if st.session_state.logged_in:
 
-    st.title("🏗️ شركة الفكر الصاعد للمقاولات")
+    st.title(
+        "🏗️ شركة الفكر الصاعد للمقاولات"
+    )
 
     st.success(
-        f"مرحبًا {st.session_state.fullname}"
+        f"مرحباً {st.session_state.fullname}"
     )
 
     st.info(
@@ -97,11 +99,10 @@ if st.session_state.logged_in:
 
         st.subheader("👔 صلاحيات المدير")
 
-        st.write("📊 Dashboard")
-        st.write("👔 لوحة المدير")
+        st.write("📊 لوحة المدير")
         st.write("👥 إدارة المستخدمين")
-        st.write("🛠️ صفحة الفني")
         st.write("🔑 تغيير كلمة المرور")
+        st.write("🛠️ صفحة الفني")
 
     else:
 
@@ -117,7 +118,10 @@ if st.session_state.logged_in:
 # شاشة تسجيل الدخول
 # ======================================
 
-st.title("🏗️ شركة الفكر الصاعد للمقاولات")
+st.title(
+    "🏗️ شركة الفكر الصاعد للمقاولات"
+)
+
 st.subheader("تسجيل الدخول")
 
 username = st.text_input(
@@ -157,4 +161,3 @@ if st.button(
         st.error(
             "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
         )
-        

@@ -1,33 +1,86 @@
 import streamlit as st
+
 from database.database import change_password
 
+# ======================================
 # التحقق من تسجيل الدخول
+# ======================================
+
 if not st.session_state.get("logged_in", False):
     st.warning("يرجى تسجيل الدخول أولاً")
     st.stop()
 
+# ======================================
+# العنوان
+# ======================================
+
 st.title("🔑 تغيير كلمة المرور")
 
-new_password = st.text_input(
-    "كلمة المرور الجديدة",
-    type="password"
+st.info(
+    f"المستخدم الحالي: {st.session_state.fullname}"
 )
 
-confirm_password = st.text_input(
-    "تأكيد كلمة المرور",
-    type="password"
-)
+# ======================================
+# نموذج تغيير كلمة المرور
+# ======================================
 
-if st.button(
-    "💾 حفظ",
-    use_container_width=True
-):
+with st.form("change_password_form"):
 
-    if not new_password or not confirm_password:
-        st.warning("يرجى تعبئة جميع الحقول")
+    current_password = st.text_input(
+        "كلمة المرور الحالية",
+        type="password"
+    )
+
+    new_password = st.text_input(
+        "كلمة المرور الجديدة",
+        type="password"
+    )
+
+    confirm_password = st.text_input(
+        "تأكيد كلمة المرور الجديدة",
+        type="password"
+    )
+
+    submitted = st.form_submit_button(
+        "💾 حفظ",
+        use_container_width=True
+    )
+
+# ======================================
+# تغيير كلمة المرور
+# ======================================
+
+if submitted:
+
+    if (
+        not current_password
+        or not new_password
+        or not confirm_password
+    ):
+
+        st.warning(
+            "⚠️ يرجى تعبئة جميع الحقول"
+        )
+
+    elif current_password != st.session_state.get(
+            "password", current_password):
+
+        # إذا كنت لا تحفظ كلمة المرور في Session State
+        # يمكنك حذف هذا الشرط أو إنشاء دالة للتحقق من كلمة المرور
+
+        pass
 
     elif new_password != confirm_password:
-        st.error("كلمتا المرور غير متطابقتين")
+
+        st.error(
+            "❌ كلمتا المرور غير متطابقتين"
+        )
+
+    elif len(new_password) < 4:
+
+        st.error(
+            "❌ يجب أن تكون كلمة المرور 4 أحرف على الأقل"
+        )
 
     else:
 
@@ -36,5 +89,7 @@ if st.button(
             new_password
         )
 
-        st.success("✅ تم تغيير كلمة المرور بنجاح")
+        st.success(
+            "✅ تم تغيير كلمة المرور بنجاح"
+        )
         

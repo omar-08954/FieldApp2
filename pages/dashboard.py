@@ -11,36 +11,15 @@ if not st.session_state.get("logged_in", False):
     st.warning("يرجى تسجيل الدخول أولاً")
     st.stop()
 
-# ======================================
-# زر تسجيل الدخول والخروج
-# ======================================
-
-with st.sidebar:
-
-    st.divider()
-
-    if st.session_state.get("logged_in", False):
-
-        if st.button(
-            "🚪 تسجيل الخروج",
-            use_container_width=True
-        ):
-            st.switch_page("app.py")
-
-    else:
-
-        if st.button(
-            "🔑 تسجيل الدخول",
-            use_container_width=True
-        ):
-            st.switch_page("app.py")
+if st.session_state.get("role") != "admin":
+    st.error("ليس لديك صلاحية للوصول لهذه الصفحة")
+    st.stop()
 
 # ======================================
-# عنوان الصفحة
+# العنوان
 # ======================================
 
-st.title("📊 لوحة التحكم")
-st.caption("شركة الفكر الصاعد للمقاولات")
+st.title("📊 Dashboard")
 
 # ======================================
 # جلب البيانات
@@ -48,150 +27,172 @@ st.caption("شركة الفكر الصاعد للمقاولات")
 
 tasks = get_all_tasks()
 
-if len(tasks) == 0:
-    st.info("لا توجد بيانات حتى الآن")
+if not tasks:
+    st.info("لا توجد مهام حتى الآن")
     st.stop()
 
-df = pd.DataFrame([dict(row) for row in tasks])
+df = pd.DataFrame(tasks)
 
 # ======================================
-# الإحصائيات
+# الإحصائيات الرئيسية
 # ======================================
 
 total_tasks = len(df)
 
 technical_tasks = len(
-    df[df["task_type"] == "تقني"]
+    df[df["status"].astype(str)
+    .str.contains("تقني", na=False)]
 )
 
-zera_tasks = len(
-    df[df["task_type"] == "زيرا"]
+zira_tasks = len(
+    df[df["status"].astype(str)
+    .str.contains("زيرا", na=False)]
 )
-
-checked_tasks = len(
-    df[df["notes"] == "تم الفحص"]
-)
-
-obstacle_tasks = len(
-    df[df["notes"] == "عائق"]
-)
-
-still_tasks = len(
-    df[df["notes"] == "مزال"]
-)
-
-today = pd.Timestamp.now().strftime("%Y-%m-%d")
 
 today_tasks = len(
     df[
-        df["created_at"]
-        .astype(str)
-        .str.startswith(today)
+        pd.to_datetime(df["created_at"])
+        .dt.date ==
+        pd.Timestamp.now().date()
     ]
 )
 
+best_tech = (
+    df["technician"]
+    .value_counts()
+    .idxmax()
+)
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("📋 إجمالي المهام", total_tasks)
+col2.metric("🛠️ مهام تقني", technical_tasks)
+col3.metric("🔧 مهام زيرا", zira_tasks)
+col4.metric("📅 مهام اليوم", today_tasks)
+
+st.divider()
+
 # ======================================
-# بطاقات الإحصائيات
+# أفضل فني
 # ======================================
+
+st.subheader("🏆 أفضل فني")
+
+st.success(best_tech)
+
+st.divider()
+
+# ======================================
+# حالات المهام
+# ======================================
+
+obstacle = len(
+    df[df["notes"].astype(str)
+    .str.contains("عائق", na=False)]
+)
+
+checked = len(
+    df[df["notes"].astype(str)
+    .str.contains("تم الفحص", na=False)]
+)
+
+removed = len(
+    df[df["notes"].astype(str)
+    .str.contains("مزال", na=False)]
+)
 
 col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.metric(
-        "📋 إجمالي المهام",
-        total_tasks
-    )
-
-with col2:
-    st.metric(
-        "🛠️ مهام تقني",
-        technical_tasks
-    )
-
-with col3:
-    st.metric(
-        "⚡ مهام زيرا",
-        zera_tasks
-    )
-
-st.divider()
-
-col4, col5, col6 = st.columns(3)
-
-with col4:
-    st.metric(
-        "✅ تم الفحص",
-        checked_tasks
-    )
-
-with col5:
-    st.metric(
-        "🚧 عائق",
-        obstacle_tasks
-    )
-
-with col6:
-    st.metric(
-        "⏳ مزال",
-        still_tasks
-    )
-
-st.divider()
-
-col7, col8 = st.columns(2)
-
-
-with col8:
-    st.metric(
-        "👷 عدد الفنيين",
-        df["technician"].nunique()
-    )
+col1.metric("🚧 عائق", obstacle)
+col2.metric("✔️ تم الفحص", checked)
+col3.metric("🗑️ مزال", removed)
 
 st.divider()
 
 # ======================================
-# الرسوم البيانية
+# البحث والتصفية
 # ======================================
 
-st.subheader("📈 توزيع أنواع المهام")
+st.subheader("🔍 البحث والتصفية")
 
-task_chart = (
-    df["task_type"]
-    .value_counts()
+technicians = ["الكل"] + sorted(
+    df["technician"].unique().tolist()
 )
 
-st.bar_chart(task_chart)
-
-st.subheader("📈 توزيع حالات المهام")
-
-status_chart = (
-    df["notes"]
-    .value_counts()
+selected_tech = st.selectbox(
+    "اختر الفني",
+    technicians
 )
 
-st.bar_chart(status_chart)
+search = st.text_input(
+    "ابحث برقم المهمة أو رقم الاشتراك"
+)
+
+filtered_df = df.copy()
+
+if selected_tech != "الكل":
+    filtered_df = filtered_df[
+        filtered_df["technician"] == selected_tech
+    ]
+
+if search:
+    filtered_df = filtered_df[
+        filtered_df.astype(str)
+        .apply(
+            lambda row:
+            row.str.contains(
+                search,
+                case=False
+            ).any(),
+            axis=1
+        )
+    ]
 
 st.divider()
 
 # ======================================
-# عرض آخر المهام
+# أداء الفنيين
 # ======================================
 
-st.subheader("📋 آخر 10 مهام")
+st.subheader("📈 أداء الفنيين")
 
-display_df = df.rename(
-    columns={
-        "technician": "الفني",
-        "task_number": "رقم المهمة",
-        "subscription_number": "رقم الاشتراك",
-        "task_type": "نوع المهمة",
-        "notes": "حالة المهمة",
-        "created_at": "تاريخ الإنشاء"
-    }
+chart_df = (
+    df.groupby("technician")
+      .size()
+      .reset_index(name="عدد المهام")
+      .set_index("technician")
 )
+
+st.bar_chart(chart_df)
+
+st.divider()
+
+# ======================================
+# عرض المهام
+# ======================================
+
+st.subheader("📋 المهام")
 
 st.dataframe(
-    display_df.head(10),
+    filtered_df,
     use_container_width=True,
     hide_index=True
+)
+
+st.divider()
+
+# ======================================
+# تصدير Excel
+# ======================================
+
+csv = filtered_df.to_csv(
+    index=False
+).encode("utf-8-sig")
+
+st.download_button(
+    "📥 تحميل Excel",
+    csv,
+    "tasks.csv",
+    "text/csv",
+    use_container_width=True
 )
