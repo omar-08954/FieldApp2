@@ -38,7 +38,7 @@ tasks = get_all_tasks()
 
 if tasks:
 
-    df = pd.DataFrame(tasks)
+    df = pd.DataFrame([dict(task) for task in tasks])
 
     # ======================================
     # الإحصائيات
@@ -252,4 +252,3 @@ if st.button(
     st.session_state.role = ""
 
     st.switch_page("app.py")
-    
