@@ -310,29 +310,6 @@ def get_tasks_by_technician(technician):
 # مهمات اليوم
 # ======================================
 
-def get_today_tasks(technician):
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT *
-        FROM tasks
-        WHERE technician = ?
-        AND DATE(created_at) = DATE('now', 'localtime')
-        ORDER BY id DESC
-    """, (technician,))
-
-    tasks = cur.fetchall()
-
-    conn.close()
-
-    return tasks
-
-
-# ======================================
-# جميع المستخدمين
-# ======================================
 
 def get_all_users():
 

@@ -3,8 +3,7 @@ import time
 
 from database.database import (
     add_task,
-    task_exists,
-    get_today_tasks
+    task_exists
 )
 
 # ======================================
@@ -64,17 +63,6 @@ with st.form(
         ]
     )
 
-    status = st.selectbox(
-        "📌 حالة التنفيذ",
-        [
-            "مكتملة",
-            "قيد التنفيذ",
-            "مؤجلة",
-            "العميل غير موجود",
-            "يحتاج مراجعة"
-        ]
-    )
-
     notes = st.selectbox(
         "📝 حالة المهمة",
         [
@@ -106,7 +94,7 @@ if submitted:
             st.session_state.fullname,
             task_number,
             subscription_number,
-            f"{task_type} - {status}",
+            task_type,
             notes):
 
         st.error(
@@ -119,7 +107,7 @@ if submitted:
             technician=st.session_state.fullname,
             task_number=task_number,
             subscription_number=subscription_number,
-            status=f"{task_type} - {status}",
+            status=task_type,
             notes=notes
         )
 
@@ -127,60 +115,11 @@ if submitted:
             "✅ تم تسجيل المهمة بنجاح"
         )
 
-        # إبقاء الرسالة 3 ثوانٍ
+        # إظهار الرسالة لمدة 3 ثوانٍ
         time.sleep(3)
 
         msg.empty()
 
-        # الانتقال مباشرة للمهمة التالية
+        # الانتقال مباشرة لتسجيل مهمة جديدة
         st.rerun()
-
-# ======================================
-# مهمات اليوم
-# ======================================
-
-st.divider()
-
-st.subheader("📅 مهمات اليوم")
-
-today_tasks = get_today_tasks(
-    st.session_state.fullname
-)
-
-if today_tasks:
-
-    for task in today_tasks:
-
-        with st.container(border=True):
-
-            st.write(
-                f"📋 رقم المهمة: "
-                f"{task['task_number']}"
-            )
-
-            st.write(
-                f"🔢 رقم الاشتراك: "
-                f"{task['subscription_number']}"
-            )
-
-            st.write(
-                f"📌 الحالة: "
-                f"{task['status']}"
-            )
-
-            if task["notes"]:
-
-                st.write(
-                    f"📝 حالة المهمة: "
-                    f"{task['notes']}"
-                )
-
-            st.caption(
-                task["created_at"]
-            )
-
-else:
-
-    st.info(
-        "لا توجد مهمات اليوم"
-    )
+        

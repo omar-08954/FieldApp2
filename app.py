@@ -97,19 +97,19 @@ if st.session_state.logged_in:
 
     if st.session_state.role == "admin":
 
-        st.subheader("👔 صلاحيات المدير")
+    st.subheader("👔 صلاحيات المدير")
 
-        st.write("📊 لوحة المدير")
-        st.write("👥 إدارة المستخدمين")
-        st.write("🔑 تغيير كلمة المرور")
-        st.write("🛠️ صفحة الفني")
+    st.write("📊 Dashboard")
+    st.write("👔 لوحة المدير")
+    st.write("👥 إدارة المستخدمين")
+    st.write("🛠️ صفحة الفني")
+    st.write("🔑 تغيير كلمة المرور")
 
     else:
 
         st.subheader("👷 صلاحيات الفني")
 
         st.write("🛠️ صفحة الفني")
-        st.write("📅 مهمات اليوم")
         st.write("🔑 تغيير كلمة المرور")
 
     st.stop()
