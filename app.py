@@ -46,6 +46,11 @@ if "city" not in st.session_state:
 
 with st.sidebar:
 
+    st.image(
+        "images/logo.png",
+        width=120
+    )
+
     st.title("🏗️ FieldApp")
 
     st.divider()
@@ -85,8 +90,22 @@ with st.sidebar:
 
 if st.session_state.logged_in:
 
-    st.title(
-        "🏗️ شركة الفكر الصاعد للمقاولات"
+    col1, col2 = st.columns([1, 4])
+
+with col1:
+    st.image(
+        "images/logo.png",
+        width=100
+    )
+
+with col2:
+    st.markdown(
+        """
+        <h1 style='margin-top:20px;'>
+        شركة الفكر الصاعد للمقاولات
+        </h1>
+        """,
+        unsafe_allow_html=True
     )
 
     st.success(
@@ -108,6 +127,7 @@ if st.session_state.logged_in:
         st.write("👥 إدارة المستخدمين")
         st.write("🛠️ صفحة الفني")
         st.write("🔑 تغيير كلمة المرور")
+        st.write("📑 صفحة التقارير")
 
     else:
 
