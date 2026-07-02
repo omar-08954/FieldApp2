@@ -49,7 +49,7 @@ with st.sidebar:
     # الشعار
     st.image(
         "images/logo.png",
-        width=150
+        width=350
     )
 
     st.title("🏗️ FieldApp")
@@ -104,7 +104,7 @@ if st.session_state.logged_in:
 
         st.image(
             "images/logo.png",
-            width=250
+            width=350
         )
 
     with col2:
@@ -158,7 +158,7 @@ with col1:
 
     st.image(
         "images/logo.png",
-        width=100
+        width=150
     )
 
 with col2:
