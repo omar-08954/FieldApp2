@@ -105,12 +105,12 @@ if st.session_state.logged_in:
     st.write("🛠️ صفحة الفني")
     st.write("🔑 تغيير كلمة المرور")
 
-    else:
+else:
 
-        st.subheader("👷 صلاحيات الفني")
+    st.subheader("👷 صلاحيات الفني")
 
-        st.write("🛠️ صفحة الفني")
-        st.write("🔑 تغيير كلمة المرور")
+    st.write("🛠️ صفحة الفني")
+    st.write("🔑 تغيير كلمة المرور")
 
     st.stop()
 
