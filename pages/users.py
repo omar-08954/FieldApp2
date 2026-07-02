@@ -229,3 +229,8 @@ if st.button(
     st.session_state.city = ""
 
     st.switch_page("app.py")
+    
+    users = get_all_users()
+
+for user in users:
+    st.write(dict(user))
