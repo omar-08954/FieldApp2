@@ -92,4 +92,17 @@ if submitted:
         st.success(
             "✅ تم تغيير كلمة المرور بنجاح"
         )
-        
+ st.divider()
+
+if st.button(
+    "🚪 تسجيل الخروج والعودة للرئيسية",
+    width="stretch"
+):
+
+    st.session_state.logged_in = False
+    st.session_state.fullname = ""
+    st.session_state.username = ""
+    st.session_state.role = ""
+
+    st.switch_page("app.py")
+           
