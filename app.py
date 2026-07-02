@@ -2,6 +2,7 @@ import streamlit as st
 
 from database.database import (
     create_tables,
+    create_default_users,
     login_user
 )
 
@@ -16,10 +17,11 @@ st.set_page_config(
 )
 
 # ======================================
-# إنشاء الجداول فقط
+# إنشاء الجداول والمستخدمين
 # ======================================
 
 create_tables()
+create_default_users()
 
 # ======================================
 # Session State
@@ -71,12 +73,10 @@ with st.sidebar:
 
     else:
 
-        st.info(
-            "يرجى تسجيل الدخول"
-        )
+        st.info("يرجى تسجيل الدخول")
 
 # ======================================
-# إذا كان المستخدم مسجل الدخول
+# منع الوصول بدون تسجيل دخول
 # ======================================
 
 if st.session_state.logged_in:
@@ -95,19 +95,20 @@ if st.session_state.logged_in:
 
     if st.session_state.role == "admin":
 
-        st.subheader("صلاحيات المدير")
+        st.subheader("👔 صلاحيات المدير")
 
         st.write("📊 Dashboard")
         st.write("👔 لوحة المدير")
         st.write("👥 إدارة المستخدمين")
-        st.write("🔑 تغيير كلمة المرور")
         st.write("🛠️ صفحة الفني")
+        st.write("🔑 تغيير كلمة المرور")
 
     else:
 
-        st.subheader("صلاحيات الفني")
+        st.subheader("👷 صلاحيات الفني")
 
         st.write("🛠️ صفحة الفني")
+        st.write("📅 مهمات اليوم")
         st.write("🔑 تغيير كلمة المرور")
 
     st.stop()
@@ -117,7 +118,6 @@ if st.session_state.logged_in:
 # ======================================
 
 st.title("🏗️ شركة الفكر الصاعد للمقاولات")
-
 st.subheader("تسجيل الدخول")
 
 username = st.text_input(
@@ -147,7 +147,7 @@ if st.button(
         st.session_state.role = user["role"]
 
         st.success(
-            "تم تسجيل الدخول بنجاح"
+            "✅ تم تسجيل الدخول بنجاح"
         )
 
         st.rerun()
@@ -155,5 +155,6 @@ if st.button(
     else:
 
         st.error(
-            "اسم المستخدم أو كلمة المرور غير صحيحة"
+            "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
         )
+        
