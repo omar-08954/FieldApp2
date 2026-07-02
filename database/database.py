@@ -1,3 +1,5 @@
+# database/database.py
+
 import sqlite3
 
 DB_NAME = "fieldapp.db"
@@ -8,8 +10,10 @@ DB_NAME = "fieldapp.db"
 # ======================================
 
 def get_connection():
+
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
+
     return conn
 
 
@@ -132,7 +136,10 @@ def change_password(username, new_password):
         UPDATE users
         SET password = ?
         WHERE username = ?
-    """, (new_password, username))
+    """, (
+        new_password,
+        username
+    ))
 
     conn.commit()
     conn.close()
@@ -252,17 +259,17 @@ def delete_task(task_id):
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute(
-        "DELETE FROM tasks WHERE id = ?",
-        (task_id,)
-    )
+    cur.execute("""
+        DELETE FROM tasks
+        WHERE id = ?
+    """, (task_id,))
 
     conn.commit()
     conn.close()
 
 
 # ======================================
-# جميع المهام
+# جلب جميع المهام
 # ======================================
 
 def get_all_tasks():
@@ -284,32 +291,8 @@ def get_all_tasks():
 
 
 # ======================================
-# مهام فني معين
+# جلب جميع المستخدمين
 # ======================================
-
-def get_tasks_by_technician(technician):
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT *
-        FROM tasks
-        WHERE technician = ?
-        ORDER BY id DESC
-    """, (technician,))
-
-    tasks = cur.fetchall()
-
-    conn.close()
-
-    return tasks
-
-
-# ======================================
-# مهمات اليوم
-# ======================================
-
 
 def get_all_users():
 
@@ -317,10 +300,11 @@ def get_all_users():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT id,
-               username,
-               fullname,
-               role
+        SELECT
+            id,
+            username,
+            fullname,
+            role
         FROM users
         ORDER BY fullname
     """)
@@ -330,89 +314,4 @@ def get_all_users():
     conn.close()
 
     return users
-def add_user(username, password, fullname, role):
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        INSERT INTO users
-        (username, password, fullname, role)
-        VALUES (?, ?, ?, ?)
-    """, (username, password, fullname, role))
-
-    conn.commit()
-    conn.close()
-
-
-def delete_user(user_id):
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute(
-        "DELETE FROM users WHERE id = ?",
-        (user_id,)
-    )
-
-    conn.commit()
-    conn.close()
-
-
-def change_password(username, new_password):
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        UPDATE users
-        SET password = ?
-        WHERE username = ?
-    """, (new_password, username))
-
-    conn.commit()
-    conn.close()
-
-
-def update_task(
-        task_id,
-        task_number,
-        subscription_number,
-        status,
-        notes):
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        UPDATE tasks
-        SET task_number = ?,
-            subscription_number = ?,
-            status = ?,
-            notes = ?
-        WHERE id = ?
-    """, (
-        task_number,
-        subscription_number,
-        status,
-        notes,
-        task_id
-    ))
-
-    conn.commit()
-    conn.close()
-
-
-def delete_task(task_id):
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute(
-        "DELETE FROM tasks WHERE id = ?",
-        (task_id,)
-    )
-
-    conn.commit()
-    conn.close()
     

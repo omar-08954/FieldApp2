@@ -47,7 +47,7 @@ with st.sidebar:
 
     st.divider()
 
-    if st.session_state.get("logged_in", False):
+    if st.session_state.logged_in:
 
         st.success(
             f"مرحباً {st.session_state.fullname}"
@@ -59,7 +59,7 @@ with st.sidebar:
 
         if st.button(
             "🚪 تسجيل الخروج",
-            use_container_width=True
+            width="stretch"
         ):
 
             st.session_state.logged_in = False
@@ -95,22 +95,22 @@ if st.session_state.logged_in:
 
     st.markdown("---")
 
-if st.session_state.role == "admin":
+    if st.session_state.role == "admin":
 
-    st.subheader("👔 صلاحيات المدير")
+        st.subheader("👔 صلاحيات المدير")
 
-    st.write("📊 Dashboard")
-    st.write("👔 لوحة المدير")
-    st.write("👥 إدارة المستخدمين")
-    st.write("🛠️ صفحة الفني")
-    st.write("🔑 تغيير كلمة المرور")
+        st.write("📊 Dashboard")
+        st.write("👔 لوحة المدير")
+        st.write("👥 إدارة المستخدمين")
+        st.write("🛠️ صفحة الفني")
+        st.write("🔑 تغيير كلمة المرور")
 
-else:
+    else:
 
-    st.subheader("👷 صلاحيات الفني")
+        st.subheader("👷 صلاحيات الفني")
 
-    st.write("🛠️ صفحة الفني")
-    st.write("🔑 تغيير كلمة المرور")
+        st.write("🛠️ صفحة الفني")
+        st.write("🔑 تغيير كلمة المرور")
 
     st.stop()
 
@@ -134,8 +134,8 @@ password = st.text_input(
 )
 
 if st.button(
-    "🔑 تسجيل الدخول",
-    use_container_width=True
+        "🔑 تسجيل الدخول",
+        width="stretch"
 ):
 
     user = login_user(
@@ -161,3 +161,4 @@ if st.button(
         st.error(
             "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
         )
+        
