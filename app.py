@@ -46,7 +46,7 @@ if "city" not in st.session_state:
 
 with st.sidebar:
 
-    # الشعار
+    # شعار الشركة
     st.image(
         "images/logo.png",
         width=350
@@ -68,7 +68,7 @@ with st.sidebar:
 
         if st.session_state.city:
             st.info(
-                f"📍 المدينة: {st.session_state.city}"
+                f"المدينة: {st.session_state.city}"
             )
 
         if st.button(
@@ -96,27 +96,9 @@ with st.sidebar:
 
 if st.session_state.logged_in:
 
-    # الشعار والعنوان
-
-    col1, col2 = st.columns([1, 4])
-
-    with col1:
-
-        st.image(
-            "images/logo.png",
-            width=350
-        )
-
-    with col2:
-
-        st.markdown(
-            """
-            <h1 style='margin-top:20px;'>
-            شركة الفكر الصاعد للمقاولات
-            </h1>
-            """,
-            unsafe_allow_html=True
-        )
+    st.title(
+        "🏗️ شركة الفكر الصاعد للمقاولات"
+    )
 
     st.success(
         f"مرحباً {st.session_state.fullname}"
@@ -135,7 +117,7 @@ if st.session_state.logged_in:
         st.write("📊 Dashboard")
         st.write("👔 لوحة المدير")
         st.write("👥 إدارة المستخدمين")
-        st.write("📑 صفحة التقارير")
+        st.write("📑 التقارير")
         st.write("🛠️ صفحة الفني")
         st.write("🔑 تغيير كلمة المرور")
 
@@ -155,17 +137,15 @@ if st.session_state.logged_in:
 col1, col2 = st.columns([1, 4])
 
 with col1:
-
     st.image(
         "images/logo.png",
-        width=150
+        width=350
     )
 
 with col2:
-
     st.markdown(
         """
-        <h1 style='margin-top:20px;'>
+        <h1 style='margin-top:30px;'>
         شركة الفكر الصاعد للمقاولات
         </h1>
         """,
@@ -200,8 +180,7 @@ if st.button(
         st.session_state.username = user["username"]
         st.session_state.role = user["role"]
 
-        # المدينة
-
+        # دعم قواعد البيانات القديمة والجديدة
         try:
             st.session_state.city = user["city"]
         except:
@@ -218,4 +197,3 @@ if st.button(
         st.error(
             "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
         )
-        
