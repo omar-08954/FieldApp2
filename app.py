@@ -176,7 +176,7 @@ password = st.text_input(
 
 if st.button(
     "🔑 تسجيل الدخول",
-    use_container_width=True
+    width="stretch"
 ):
 
     user = login_user(
