@@ -268,4 +268,46 @@ def get_all_users():
 
     conn.commit()
     conn.close()
-       
+   # ======================================
+# إضافة مستخدم
+# ======================================
+def add_user(
+        username,
+        password,
+        fullname,
+        role):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO users
+        (username, password, fullname, role)
+        VALUES (?, ?, ?, ?)
+    """, (
+        username,
+        password,
+        fullname,
+        role
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+# ======================================
+# حذف مستخدم
+# ======================================
+def delete_user(user_id):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM users WHERE id = ?",
+        (user_id,)
+    )
+
+    conn.commit()
+    conn.close()
+        
