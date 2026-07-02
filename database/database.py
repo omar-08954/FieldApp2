@@ -236,6 +236,56 @@ def get_today_tasks(technician):
 # ======================================
 # جميع المستخدمين
 # ======================================
+# ======================================
+# حذف مهمة
+# ======================================
+
+def delete_task(task_id):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM tasks WHERE id = ?",
+        (task_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# ======================================
+# تعديل مهمة
+# ======================================
+
+def update_task(
+        task_id,
+        task_number,
+        subscription_number,
+        status,
+        notes):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE tasks
+        SET task_number = ?,
+            subscription_number = ?,
+            status = ?,
+            notes = ?
+        WHERE id = ?
+    """, (
+        task_number,
+        subscription_number,
+        status,
+        notes,
+        task_id
+    ))
+
+    conn.commit()
+    conn.close()
+    
 def get_all_users():
 
     conn = get_connection()
@@ -310,4 +360,3 @@ def delete_user(user_id):
 
     conn.commit()
     conn.close()
-        
