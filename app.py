@@ -46,9 +46,10 @@ if "city" not in st.session_state:
 
 with st.sidebar:
 
+    # الشعار
     st.image(
         "images/logo.png",
-        width=120
+        width=150
     )
 
     st.title("🏗️ FieldApp")
@@ -65,9 +66,14 @@ with st.sidebar:
             f"الصلاحية: {st.session_state.role}"
         )
 
+        if st.session_state.city:
+            st.info(
+                f"📍 المدينة: {st.session_state.city}"
+            )
+
         if st.button(
             "🚪 تسجيل الخروج",
-            width="stretch"
+            use_container_width=True
         ):
 
             st.session_state.logged_in = False
@@ -76,7 +82,7 @@ with st.sidebar:
             st.session_state.role = ""
             st.session_state.city = ""
 
-            st.switch_page("app.py")
+            st.rerun()
 
     else:
 
@@ -90,23 +96,27 @@ with st.sidebar:
 
 if st.session_state.logged_in:
 
+    # الشعار والعنوان
+
     col1, col2 = st.columns([1, 4])
 
-with col1:
-    st.image(
-        "images/logo.png",
-        width=100
-    )
+    with col1:
 
-with col2:
-    st.markdown(
-        """
-        <h1 style='margin-top:20px;'>
-        شركة الفكر الصاعد للمقاولات
-        </h1>
-        """,
-        unsafe_allow_html=True
-    )
+        st.image(
+            "images/logo.png",
+            width=100
+        )
+
+    with col2:
+
+        st.markdown(
+            """
+            <h1 style='margin-top:20px;'>
+            شركة الفكر الصاعد للمقاولات
+            </h1>
+            """,
+            unsafe_allow_html=True
+        )
 
     st.success(
         f"مرحباً {st.session_state.fullname}"
@@ -125,9 +135,9 @@ with col2:
         st.write("📊 Dashboard")
         st.write("👔 لوحة المدير")
         st.write("👥 إدارة المستخدمين")
+        st.write("📑 صفحة التقارير")
         st.write("🛠️ صفحة الفني")
         st.write("🔑 تغيير كلمة المرور")
-        st.write("📑 صفحة التقارير")
 
     else:
 
@@ -142,9 +152,25 @@ with col2:
 # شاشة تسجيل الدخول
 # ======================================
 
-st.title(
-    "🏗️ شركة الفكر الصاعد للمقاولات"
-)
+col1, col2 = st.columns([1, 4])
+
+with col1:
+
+    st.image(
+        "images/logo.png",
+        width=100
+    )
+
+with col2:
+
+    st.markdown(
+        """
+        <h1 style='margin-top:20px;'>
+        شركة الفكر الصاعد للمقاولات
+        </h1>
+        """,
+        unsafe_allow_html=True
+    )
 
 st.subheader("تسجيل الدخول")
 
@@ -159,7 +185,7 @@ password = st.text_input(
 
 if st.button(
     "🔑 تسجيل الدخول",
-    width="stretch"
+    use_container_width=True
 ):
 
     user = login_user(
@@ -173,7 +199,13 @@ if st.button(
         st.session_state.fullname = user["fullname"]
         st.session_state.username = user["username"]
         st.session_state.role = user["role"]
-        st.session_state.city = user["city"]
+
+        # المدينة
+
+        try:
+            st.session_state.city = user["city"]
+        except:
+            st.session_state.city = ""
 
         st.success(
             "✅ تم تسجيل الدخول بنجاح"
@@ -186,3 +218,4 @@ if st.button(
         st.error(
             "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
         )
+        
