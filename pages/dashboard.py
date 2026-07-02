@@ -31,7 +31,8 @@ if not tasks:
     st.info("لا توجد مهام حتى الآن")
     st.stop()
 
-df = pd.DataFrame(tasks)
+# تحويل البيانات بشكل صحيح
+df = pd.DataFrame([dict(task) for task in tasks])
 
 # ======================================
 # الإحصائيات الرئيسية
@@ -40,20 +41,18 @@ df = pd.DataFrame(tasks)
 total_tasks = len(df)
 
 technical_tasks = len(
-    df[df["status"].astype(str)
-    .str.contains("تقني", na=False)]
+    df[
+        df["status"]
+        .astype(str)
+        .str.contains("تقني", na=False)
+    ]
 )
 
 zira_tasks = len(
-    df[df["status"].astype(str)
-    .str.contains("زيرا", na=False)]
-)
-
-today_tasks = len(
     df[
-        pd.to_datetime(df["created_at"])
-        .dt.date ==
-        pd.Timestamp.now().date()
+        df["status"]
+        .astype(str)
+        .str.contains("زيرا", na=False)
     ]
 )
 
@@ -63,12 +62,22 @@ best_tech = (
     .idxmax()
 )
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
-col1.metric("📋 إجمالي المهام", total_tasks)
-col2.metric("🛠️ مهام تقني", technical_tasks)
-col3.metric("🔧 مهام زيرا", zira_tasks)
-col4.metric("📅 مهام اليوم", today_tasks)
+col1.metric(
+    "📋 إجمالي المهام",
+    total_tasks
+)
+
+col2.metric(
+    "🛠️ مهام تقني",
+    technical_tasks
+)
+
+col3.metric(
+    "🔧 مهام زيرا",
+    zira_tasks
+)
 
 st.divider()
 
@@ -87,25 +96,45 @@ st.divider()
 # ======================================
 
 obstacle = len(
-    df[df["notes"].astype(str)
-    .str.contains("عائق", na=False)]
+    df[
+        df["notes"]
+        .astype(str)
+        .str.contains("عائق", na=False)
+    ]
 )
 
 checked = len(
-    df[df["notes"].astype(str)
-    .str.contains("تم الفحص", na=False)]
+    df[
+        df["notes"]
+        .astype(str)
+        .str.contains("تم الفحص", na=False)
+    ]
 )
 
 removed = len(
-    df[df["notes"].astype(str)
-    .str.contains("مزال", na=False)]
+    df[
+        df["notes"]
+        .astype(str)
+        .str.contains("مزال", na=False)
+    ]
 )
 
 col1, col2, col3 = st.columns(3)
 
-col1.metric("🚧 عائق", obstacle)
-col2.metric("✔️ تم الفحص", checked)
-col3.metric("🗑️ مزال", removed)
+col1.metric(
+    "🚧 عائق",
+    obstacle
+)
+
+col2.metric(
+    "✔️ تم الفحص",
+    checked
+)
+
+col3.metric(
+    "🗑️ مزال",
+    removed
+)
 
 st.divider()
 
@@ -116,7 +145,9 @@ st.divider()
 st.subheader("🔍 البحث والتصفية")
 
 technicians = ["الكل"] + sorted(
-    df["technician"].unique().tolist()
+    df["technician"]
+    .unique()
+    .tolist()
 )
 
 selected_tech = st.selectbox(
@@ -131,11 +162,14 @@ search = st.text_input(
 filtered_df = df.copy()
 
 if selected_tech != "الكل":
+
     filtered_df = filtered_df[
-        filtered_df["technician"] == selected_tech
+        filtered_df["technician"]
+        == selected_tech
     ]
 
 if search:
+
     filtered_df = filtered_df[
         filtered_df.astype(str)
         .apply(
@@ -175,7 +209,7 @@ st.subheader("📋 المهام")
 
 st.dataframe(
     filtered_df,
-    use_container_width=True,
+    width="stretch",
     hide_index=True
 )
 
@@ -194,9 +228,14 @@ st.download_button(
     csv,
     "tasks.csv",
     "text/csv",
-    use_container_width=True
+    width="stretch"
 )
+
 st.divider()
+
+# ======================================
+# تسجيل الخروج
+# ======================================
 
 if st.button(
     "🚪 تسجيل الخروج والعودة للرئيسية",
@@ -207,6 +246,6 @@ if st.button(
     st.session_state.fullname = ""
     st.session_state.username = ""
     st.session_state.role = ""
+    st.session_state.city = ""
 
     st.switch_page("app.py")
-    
