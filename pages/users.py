@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import time
 
 from database.database import (
     add_user,
@@ -60,18 +61,23 @@ with st.form(
             "technician"
         ]
     )
+
     city = st.selectbox(
-    "المدينة",
-    [
-        "مكة",
-        "جدة"
-    ]
-)
+        "المدينة",
+        [
+            "مكة",
+            "جدة"
+        ]
+    )
 
     submitted = st.form_submit_button(
         "💾 إضافة المستخدم",
-        use_container_width=True
+        width="stretch"
     )
+
+# ======================================
+# حفظ المستخدم
+# ======================================
 
 if submitted:
 
@@ -93,10 +99,17 @@ if submitted:
                 city
             )
 
-            st.success(
+            msg = st.success(
                 "✅ تم إضافة المستخدم بنجاح"
             )
 
+            # إظهار الرسالة لمدة 3 ثوانٍ
+            time.sleep(3)
+
+            # حذف الرسالة
+            msg.empty()
+
+            # تحديث الصفحة
             st.rerun()
 
         except Exception as e:
@@ -123,7 +136,7 @@ if users:
 
     st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
@@ -136,7 +149,9 @@ if users:
     st.subheader("🗑️ حذف مستخدم")
 
     user_options = {
-        f"{row['fullname']} ({row['username']})": row["id"]
+        f"{row['fullname']} ({row['username']})":
+        row["id"]
+
         for _, row in df.iterrows()
     }
 
@@ -145,7 +160,9 @@ if users:
         list(user_options.keys())
     )
 
-    selected_id = user_options[selected_user]
+    selected_id = user_options[
+        selected_user
+    ]
 
     selected_row = (
         df[df["id"] == selected_id]
@@ -159,13 +176,15 @@ if users:
 
     if st.button(
         "🗑️ حذف المستخدم",
-        use_container_width=True
+        width="stretch"
     ):
 
-        # منع حذف المستخدم الحالي
+        # منع حذف الحساب الحالي
+
         if (
             selected_row["username"]
-            == st.session_state.username
+            ==
+            st.session_state.username
         ):
 
             st.error(
@@ -176,9 +195,13 @@ if users:
 
             delete_user(selected_id)
 
-            st.success(
+            msg = st.success(
                 "✅ تم حذف المستخدم بنجاح"
             )
+
+            time.sleep(3)
+
+            msg.empty()
 
             st.rerun()
 
@@ -203,5 +226,6 @@ if st.button(
     st.session_state.fullname = ""
     st.session_state.username = ""
     st.session_state.role = ""
+    st.session_state.city = ""
 
     st.switch_page("app.py")
