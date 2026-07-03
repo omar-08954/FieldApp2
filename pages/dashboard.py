@@ -145,9 +145,7 @@ st.divider()
 st.subheader("🔍 البحث والتصفية")
 
 technicians = ["الكل"] + sorted(
-    df["technician"]
-    .unique()
-    .tolist()
+    df["technician"].dropna().unique().tolist()
 )
 
 selected_tech = st.selectbox(
@@ -156,33 +154,40 @@ selected_tech = st.selectbox(
 )
 
 search = st.text_input(
-    "ابحث برقم المهمة أو رقم الاشتراك"
+    "ابحث برقم المهمة أو رقم الاشتراك أو اسم الفني"
 )
 
 filtered_df = df.copy()
 
+# فلترة حسب الفني
+
 if selected_tech != "الكل":
 
     filtered_df = filtered_df[
-        filtered_df["technician"]
-        == selected_tech
+        filtered_df["technician"] == selected_tech
     ]
+
+# البحث
 
 if search:
 
     filtered_df = filtered_df[
-        filtered_df.astype(str)
-        .apply(
-            lambda row:
-            row.str.contains(
-                search,
-                case=False
-            ).any(),
-            axis=1
-        )
-    ]
+        filtered_df["task_number"]
+            .astype(str)
+            .str.contains(search, case=False, na=False)
 
-st.divider()
+        |
+
+        filtered_df["subscription_number"]
+            .astype(str)
+            .str.contains(search, case=False, na=False)
+
+        |
+
+        filtered_df["technician"]
+            .astype(str)
+            .str.contains(search, case=False, na=False)
+    ]
 
 # ======================================
 # أداء الفنيين
