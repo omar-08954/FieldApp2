@@ -211,21 +211,3 @@ if st.button(
         st.error(
             "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
         )
-
-        # دعم قواعد البيانات القديمة والجديدة
-        try:
-            st.session_state.city = user["city"]
-        except:
-            st.session_state.city = ""
-
-        st.success(
-            "✅ تم تسجيل الدخول بنجاح"
-        )
-
-        st.rerun()
-
-    else:
-
-        st.error(
-            "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
-        )
