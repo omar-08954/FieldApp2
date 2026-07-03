@@ -156,7 +156,7 @@ selected_tech = st.selectbox(
 )
 
 search = st.text_input(
-    "اكتب كلمة البحث"
+    "اكتب اسم الفني او رقم المهمة او رقم الإشتراك"
 )
 
 search_button = st.button(
