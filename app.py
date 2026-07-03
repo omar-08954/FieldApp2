@@ -179,6 +179,10 @@ if st.button(
     width="stretch"
 ):
 
+    # إزالة المسافات من البداية والنهاية
+    username = username.strip()
+    password = password.strip()
+
     user = login_user(
         username,
         password
@@ -190,6 +194,23 @@ if st.button(
         st.session_state.fullname = user["fullname"]
         st.session_state.username = user["username"]
         st.session_state.role = user["role"]
+
+        try:
+            st.session_state.city = user["city"]
+        except:
+            st.session_state.city = ""
+
+        st.success(
+            "✅ تم تسجيل الدخول بنجاح"
+        )
+
+        st.rerun()
+
+    else:
+
+        st.error(
+            "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
+        )
 
         # دعم قواعد البيانات القديمة والجديدة
         try:
