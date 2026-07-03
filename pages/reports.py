@@ -8,7 +8,7 @@ if not st.session_state.get("logged_in", False):
     st.stop()
 
 if st.session_state.role != "admin":
-    st.error("ليس لديك صلاحية")
+    st.error("ليس لديك صلاحية للوصول لهذه الصفحة")
     st.stop()
 
 st.title("📑 التقارير")
