@@ -187,7 +187,9 @@ if search:
         filtered_df["technician"]
             .astype(str)
             .str.contains(search, case=False, na=False)
-    ]
+    ] 
+    
+st.divider()
 
 # ======================================
 # أداء الفنيين
