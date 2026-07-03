@@ -142,6 +142,8 @@ st.divider()
 # البحث والتصفية
 # ======================================
 
+import time
+
 st.subheader("🔍 البحث والتصفية")
 
 technicians = ["الكل"] + sorted(
@@ -154,40 +156,57 @@ selected_tech = st.selectbox(
 )
 
 search = st.text_input(
-    "ابحث برقم المهمة أو رقم الاشتراك أو اسم الفني"
+    "اكتب كلمة البحث"
+)
+
+search_button = st.button(
+    "🔍 بحث",
+    width="stretch"
 )
 
 filtered_df = df.copy()
 
-# فلترة حسب الفني
+if search_button:
 
-if selected_tech != "الكل":
+    if selected_tech != "الكل":
+
+        filtered_df = filtered_df[
+            filtered_df["technician"] == selected_tech
+        ]
+
+    if search:
+
+        filtered_df = filtered_df[
+            filtered_df["task_number"]
+                .astype(str)
+                .str.contains(search, case=False, na=False)
+
+            |
+
+            filtered_df["subscription_number"]
+                .astype(str)
+                .str.contains(search, case=False, na=False)
+
+            |
+
+            filtered_df["technician"]
+                .astype(str)
+                .str.contains(search, case=False, na=False)
+        ]
+
+    msg = st.success(
+        "✅ تم البحث عن المهمة بنجاح"
+    )
+
+    time.sleep(3)
+
+    msg.empty()
+
+elif selected_tech != "الكل":
 
     filtered_df = filtered_df[
         filtered_df["technician"] == selected_tech
-    ]
-
-# البحث
-
-if search:
-
-    filtered_df = filtered_df[
-        filtered_df["task_number"]
-            .astype(str)
-            .str.contains(search, case=False, na=False)
-
-        |
-
-        filtered_df["subscription_number"]
-            .astype(str)
-            .str.contains(search, case=False, na=False)
-
-        |
-
-        filtered_df["technician"]
-            .astype(str)
-            .str.contains(search, case=False, na=False)
-    ] 
+    ]  
     
 st.divider()
 
