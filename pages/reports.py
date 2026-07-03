@@ -75,4 +75,19 @@ with tab2:
         "jeddah_report.csv",
         "text/csv"
     )
-    
+    # ======================================
+    # تسجيل الخروج
+    # ======================================
+
+if st.button(
+    "🚪 تسجيل الخروج والعودة للرئيسية",
+    width="stretch"
+):
+
+    st.session_state.logged_in = False
+    st.session_state.fullname = ""
+    st.session_state.username = ""
+    st.session_state.role = ""
+    st.session_state.city = ""
+
+    st.switch_page("app.py")
