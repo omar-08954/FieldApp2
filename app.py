@@ -131,6 +131,7 @@ if st.session_state.logged_in:
         st.write("📑صفحة التقارير")
         st.write("🛠️ صفحة الفني")
         st.write("🔑 تغيير كلمة المرور")
+        st.write(" 📦 المستودع")
 
     else:
 
