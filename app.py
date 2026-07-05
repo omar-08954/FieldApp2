@@ -125,7 +125,7 @@ if st.session_state.logged_in:
 
         st.subheader("👔 صلاحيات المدير")
 
-        st.write("📊 Dashboard")
+        st.write("📊 لوحة التحكم")
         st.write("👔 لوحة المدير")
         st.write("👥 إدارة المستخدمين")
         st.write("📑صفحة التقارير")
