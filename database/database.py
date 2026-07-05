@@ -256,3 +256,251 @@ def get_all_tasks():
     conn.close()
 
     return tasks
+
+# ======================================
+# إنشاء جدول المواد
+# ======================================
+
+def create_materials_table():
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS materials(
+
+            id SERIAL PRIMARY KEY,
+
+            name TEXT UNIQUE NOT NULL,
+
+            quantity INTEGER NOT NULL,
+
+            unit TEXT NOT NULL,
+
+            notes TEXT
+
+        )
+    """)
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+
+# ======================================
+# التحقق من وجود المادة
+# ======================================
+
+def material_exists(name):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id
+        FROM materials
+        WHERE LOWER(name)=LOWER(%s)
+    """, (name,))
+
+    material = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    return material is not None
+
+
+# ======================================
+# إضافة مادة
+# ======================================
+
+def add_material(
+        name,
+        quantity,
+        unit,
+        notes):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO materials
+        (
+            name,
+            quantity,
+            unit,
+            notes
+        )
+
+        VALUES
+        (
+            %s,
+            %s,
+            %s,
+            %s
+        )
+    """, (
+        name,
+        quantity,
+        unit,
+        notes
+    ))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+
+# ======================================
+# جلب جميع المواد
+# ======================================
+
+def get_all_materials():
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT *
+        FROM materials
+        ORDER BY name
+    """)
+
+    materials = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return materials
+
+# ======================================
+# تعديل المادة
+# ======================================
+
+def update_material(
+        material_id,
+        name,
+        unit,
+        notes):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE materials
+        SET
+            name=%s,
+            unit=%s,
+            notes=%s
+        WHERE id=%s
+    """, (
+        name,
+        unit,
+        notes,
+        material_id
+    ))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+
+# ======================================
+# زيادة كمية مادة
+# ======================================
+
+def increase_material(
+        material_id,
+        quantity):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE materials
+        SET quantity=quantity+%s
+        WHERE id=%s
+    """, (
+        quantity,
+        material_id
+    ))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+
+# ======================================
+# تقليل كمية مادة
+# ======================================
+
+def decrease_material(
+        material_id,
+        quantity):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # جلب الكمية الحالية
+
+    cur.execute("""
+        SELECT quantity
+        FROM materials
+        WHERE id=%s
+    """, (material_id,))
+
+    material = cur.fetchone()
+
+    if not material:
+
+        cur.close()
+        conn.close()
+
+        return False
+
+    if material["quantity"] < quantity:
+
+        cur.close()
+        conn.close()
+
+        return False
+
+    cur.execute("""
+        UPDATE materials
+        SET quantity=quantity-%s
+        WHERE id=%s
+    """, (
+        quantity,
+        material_id
+    ))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    return True
+
+
+# ======================================
+# حذف مادة
+# ======================================
+
+def delete_material(material_id):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        DELETE FROM materials
+        WHERE id=%s
+    """, (material_id,))
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
