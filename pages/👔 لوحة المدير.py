@@ -551,17 +551,17 @@ with tab_edit:
 
                 update_task(
 
-                    task["id"],
+        int(task["id"]),
 
-                    task["task_number"],
+        task["task_number"],
 
-                    task["subscription_number"],
+        task["subscription_number"],
 
-                    task_type,
+        task_type,
 
-                    task_status
+        task_status
 
-                )
+)
 
                 time.sleep(1)
 
@@ -709,8 +709,8 @@ with tab_delete:
             ):
 
                 delete_task(
-                    task["id"]
-                )
+      int(task["id"])
+   )
 
                 time.sleep(1)
 
