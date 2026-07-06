@@ -17,7 +17,11 @@ from database.database import (
 # ======================================
 
 if not st.session_state.get("logged_in", False):
-    st.warning("يرجى تسجيل الدخول أولاً")
+
+    st.warning(
+        "يرجى تسجيل الدخول أولاً."
+    )
+
     st.stop()
 
 # ======================================
@@ -25,7 +29,11 @@ if not st.session_state.get("logged_in", False):
 # ======================================
 
 if st.session_state.get("role") != "admin":
-    st.error("ليس لديك صلاحية للوصول لهذه الصفحة.")
+
+    st.error(
+        "ليس لديك صلاحية للوصول لهذه الصفحة."
+    )
+
     st.stop()
 
 # ======================================
@@ -45,8 +53,11 @@ st.caption(
 materials = get_all_materials()
 
 if materials:
+
     df = pd.DataFrame(materials)
+
 else:
+
     df = pd.DataFrame(
         columns=[
             "id",
@@ -70,7 +81,9 @@ if len(df):
     )
 
     low_stock = len(
-        df[df["quantity"] <= 10]
+        df[
+            df["quantity"] <= 10
+        ]
     )
 
 else:
@@ -78,19 +91,19 @@ else:
     total_quantity = 0
     low_stock = 0
 
-card1, card2, card3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
 
-card1.metric(
+c1.metric(
     "📦 عدد المواد",
     total_materials
 )
 
-card2.metric(
+c2.metric(
     "📊 إجمالي الكمية",
     total_quantity
 )
 
-card3.metric(
+c3.metric(
     "⚠️ أوشكت على النفاد",
     low_stock
 )
@@ -102,11 +115,17 @@ st.divider()
 # ======================================
 
 tab_add, tab_list, tab_manage = st.tabs(
+
     [
+
         "➕ إضافة مادة",
+
         "📋 المواد",
+
         "⚙️ إدارة مادة"
+
     ]
+
 )
 
 # ======================================
@@ -141,6 +160,7 @@ with tab_add:
                 "كرتون",
                 "رول",
                 "كيس",
+                "علبة",
                 "أخرى"
             ]
         )
@@ -179,9 +199,9 @@ with tab_add:
 
                 add_material(
                     material_name,
-                    quantity,
+                    int(quantity),
                     unit,
-                    notes
+                    notes.strip()
                 )
 
                 time.sleep(1)
@@ -196,7 +216,22 @@ with tab_add:
 
             st.rerun()
 
-    
+    st.divider()
+
+    st.info(
+        """
+📌 تعليمات
+
+• اسم المادة يجب أن يكون فريدًا.
+
+• الكمية يجب أن تكون أكبر من صفر.
+
+• يمكن ترك الملاحظات فارغة.
+
+• سيتم تنظيف الحقول تلقائياً بعد الإضافة.
+"""
+    )
+
 # ======================================
 # تبويب المواد
 # ======================================
@@ -253,11 +288,10 @@ with tab_list:
             }
         )
 
-        if "id" in display_df.columns:
-
-            display_df = display_df.drop(
-                columns=["id"]
-            )
+        display_df = display_df.drop(
+            columns=["id"],
+            errors="ignore"
+        )
 
         # ======================================
         # تلوين الكمية
@@ -309,17 +343,6 @@ with tab_list:
         st.caption(
             f"📦 عدد النتائج : {len(filtered_df)}"
         )
-    )
-    
-    st.dataframe(
-            styled_df,
-            width="stretch",
-            hide_index=True
-        )
-
-        st.caption(
-            f"📦 عدد النتائج : {len(filtered_df)}"
-        )
 
     else:
 
@@ -331,11 +354,11 @@ with tab_list:
 
     st.info(
         """
-🟢 أخضر = مخزون جيد
+🟢 مخزون جيد
 
-🟡 أصفر = مخزون متوسط
+🟡 مخزون متوسط
 
-🔴 أحمر = مخزون منخفض ويحتاج إعادة طلب
+🔴 مخزون منخفض ويحتاج إعادة طلب
 """
     )
 
@@ -349,7 +372,9 @@ with tab_manage:
 
     if df.empty:
 
-        st.info("لا توجد مواد داخل المستودع.")
+        st.info(
+            "لا توجد مواد داخل المستودع."
+        )
 
     else:
 
@@ -370,7 +395,7 @@ with tab_manage:
             f"📦 الكمية الحالية : {material['quantity']} {material['unit']}"
         )
 
-        if material["quantity"] <= 10:
+        if int(material["quantity"]) <= 10:
 
             st.warning(
                 "⚠️ هذه المادة قاربت على النفاد."
@@ -388,93 +413,66 @@ with tab_manage:
 
             st.subheader("✏️ تعديل المادة")
 
-            with st.form(
-                "edit_material_form"
+            edit_name = st.text_input(
+                "اسم المادة",
+                value=material["name"]
+            )
+
+            units = [
+                "حبة",
+                "متر",
+                "بكرة",
+                "كرتون",
+                "رول",
+                "كيس",
+                "علبة",
+                "أخرى"
+            ]
+
+            current_unit = (
+                material["unit"]
+                if material["unit"] in units
+                else "أخرى"
+            )
+
+            edit_unit = st.selectbox(
+                "الوحدة",
+                units,
+                index=units.index(current_unit)
+            )
+
+            edit_notes = st.text_area(
+                "الملاحظات",
+                value=material["notes"] or ""
+            )
+
+            if st.button(
+                "💾 حفظ التعديلات",
+                width="stretch"
             ):
 
-                edit_name = st.text_input(
-                    "اسم المادة",
-                    value=material["name"]
-                )
-
-                units = [
-                    "حبة",
-                    "متر",
-                    "بكرة",
-                    "كرتون",
-                    "رول",
-                    "كيس",
-                    "أخرى"
-                ]
-
-                current_unit = (
-                    material["unit"]
-                    if material["unit"] in units
-                    else "أخرى"
-                )
-
-                edit_unit = st.selectbox(
-                    "الوحدة",
-                    units,
-                    index=units.index(current_unit)
-                )
-
-                edit_notes = st.text_area(
-                    "الملاحظات",
-                    value=material["notes"] or "",
-                    height=80
-                )
-
-                save_btn = st.form_submit_button(
-                    "💾 حفظ التعديلات",
-                    width="stretch"
-                )
-
-            if save_btn:
-
-                new_name = edit_name.strip()
-
-                if new_name == "":
-
-                    st.warning(
-                        "⚠️ أدخل اسم المادة."
-                    )
-
-                elif (
-                    new_name.lower()
-                    != material["name"].lower()
-                    and
-                    material_exists(new_name)
+                with st.spinner(
+                    "⏳ جاري حفظ التعديلات..."
                 ):
 
-                    st.error(
-                        "❌ اسم المادة موجود بالفعل."
+                    update_material(
+                        material["id"],
+                        edit_name.strip(),
+                        edit_unit,
+                        edit_notes.strip()
                     )
 
-                else:
+                    time.sleep(1)
 
-                    with st.spinner(
-                        "⏳ جاري حفظ التعديلات..."
-                    ):
+                msg = st.success(
+                    "✅ تم تعديل المادة بنجاح."
+                )
 
-                        update_material(
-                            material["id"],
-                            new_name,
-                            edit_unit,
-                            edit_notes
-                        )
+                time.sleep(3)
 
-                        time.sleep(1)
+                msg.empty()
 
-                    msg = st.success(
-                        "✅ تم تعديل المادة بنجاح."
-                    )
-
-                    time.sleep(3)
-
-                    msg.empty()
-
-                    st.rerun()
+                st.rerun()
 
         # ======================================
         # إدارة الكمية
@@ -484,20 +482,17 @@ with tab_manage:
 
             st.subheader("📦 إدارة الكمية")
 
-            with st.form("increase_form"):
+            increase_qty = st.number_input(
+                "إضافة كمية",
+                min_value=1,
+                step=1,
+                key="increase_qty"
+            )
 
-                increase_qty = st.number_input(
-                    "إضافة كمية",
-                    min_value=1,
-                    step=1
-                )
-
-                increase_btn = st.form_submit_button(
-                    "➕ إضافة للمخزون",
-                    width="stretch"
-                )
-
-            if increase_btn:
+            if st.button(
+                "➕ إضافة للمخزون",
+                width="stretch"
+            ):
 
                 with st.spinner(
                     "⏳ جاري إضافة الكمية..."
@@ -505,7 +500,7 @@ with tab_manage:
 
                     increase_material(
                         material["id"],
-                        increase_qty
+                        int(increase_qty)
                     )
 
                     time.sleep(1)
@@ -522,20 +517,17 @@ with tab_manage:
 
             st.divider()
 
-            with st.form("decrease_form"):
+            decrease_qty = st.number_input(
+                "خصم كمية",
+                min_value=1,
+                step=1,
+                key="decrease_qty"
+            )
 
-                decrease_qty = st.number_input(
-                    "خصم كمية",
-                    min_value=1,
-                    step=1
-                )
-
-                decrease_btn = st.form_submit_button(
-                    "➖ خصم من المخزون",
-                    width="stretch"
-                )
-
-            if decrease_btn:
+            if st.button(
+                "➖ خصم من المخزون",
+                width="stretch"
+            ):
 
                 with st.spinner(
                     "⏳ جاري خصم الكمية..."
@@ -543,20 +535,12 @@ with tab_manage:
 
                     success = decrease_material(
                         material["id"],
-                        decrease_qty
+                        int(decrease_qty)
                     )
 
                     time.sleep(1)
 
                 if success:
-
-                    remaining = int(material["quantity"]) - int(decrease_qty)
-
-                    if remaining <= 0:
-
-                        st.warning(
-                            "⚠️ نفدت هذه المادة من المستودع."
-                        )
 
                     msg = st.success(
                         "✅ تم خصم الكمية بنجاح."
@@ -627,6 +611,6 @@ if st.button(
     st.session_state.fullname = ""
     st.session_state.username = ""
     st.session_state.role = ""
+    st.session_state.city = ""
 
     st.switch_page("app.py")
-    
