@@ -259,37 +259,83 @@ with tab_list:
                 columns=["id"]
             )
 
-        # ======================================
-        # تلوين الكمية
-        # ======================================
+    # ======================================
+    # تلوين الكمية
+    # ======================================
+    
+    def color_quantity(value):
+    
+        try:
+            value = int(value)
+    
+        except:
+            return ""
+    
+        if value <= 10:
+    
+            return (
+                "background-color:#ffd6d6;"
+                "color:black;"
+                "font-weight:bold;"
+            )
+    
+        elif value <= 20:
+    
+            return (
+                "background-color:#fff4c2;"
+                "color:black;"
+                "font-weight:bold;"
+            )
+    
+        else:
+    
+            return (
+                "background-color:#d9ffd9;"
+                "color:black;"
+                "font-weight:bold;"
+            )
+    
+    
+    styled_df = display_df.style.map(
+        color_quantity,
+        subset=["الكمية"]
+    )
+    
+    st.dataframe(
+        styled_df,
+        hide_index=True,
+        width="stretch"
+    )
 
-        def color_quantity(value):
+st.dataframe(
 
-            try:
+    styled_df,
 
-                value = int(value)
+    hide_index=True,
 
-            except:
+    width="stretch"
 
-                return ""
+)
 
-            if value <= 10:
+st.dataframe(
 
-                return "background-color:#ffd6d6"
+    styled_df,
 
-            elif value <= 20:
+    hide_index=True,
 
-                return "background-color:#fff4c2"
+    width="stretch"
 
-            else:
+)
 
-                return "background-color:#d9ffd9"
+st.dataframe(
 
-        styled_df = display_df.style.map(
-            color_quantity,
-            subset=["الكمية"]
-        )
+    styled_df,
 
+    hide_index=True,
+
+    width="stretch"
+
+)
         st.dataframe(
             styled_df,
             width="stretch",
