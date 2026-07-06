@@ -259,46 +259,56 @@ with tab_list:
                 columns=["id"]
             )
 
- # ======================================
- # تلوين الكمية
- # ======================================
-    
-    def color_quantity(value):
-    
-        try:
-            value = int(value)
-    
-        except:
-            return ""
-    
-        if value <= 10:
-    
-            return (
-                "background-color:#ffd6d6;"
-                "color:black;"
-                "font-weight:bold;"
-            )
-    
-        elif value <= 20:
-    
-            return (
-                "background-color:#fff4c2;"
-                "color:black;"
-                "font-weight:bold;"
-            )
-    
-        else:
-    
-            return (
-                "background-color:#d9ffd9;"
-                "color:black;"
-                "font-weight:bold;"
-            )
-    
-    
-    styled_df = display_df.style.map(
-        color_quantity,
-        subset=["الكمية"]
+        # ======================================
+        # تلوين الكمية
+        # ======================================
+
+        def color_quantity(value):
+
+            try:
+                value = int(value)
+
+            except:
+                return ""
+
+            if value <= 10:
+
+                return (
+                    "background-color:#ffd6d6;"
+                    "color:black;"
+                    "font-weight:bold;"
+                )
+
+            elif value <= 20:
+
+                return (
+                    "background-color:#fff4c2;"
+                    "color:black;"
+                    "font-weight:bold;"
+                )
+
+            else:
+
+                return (
+                    "background-color:#d9ffd9;"
+                    "color:black;"
+                    "font-weight:bold;"
+                )
+
+        styled_df = display_df.style.map(
+            color_quantity,
+            subset=["الكمية"]
+        )
+
+        st.dataframe(
+            styled_df,
+            hide_index=True,
+            width="stretch"
+        )
+
+        st.caption(
+            f"📦 عدد النتائج : {len(filtered_df)}"
+        )
     )
     
     st.dataframe(
