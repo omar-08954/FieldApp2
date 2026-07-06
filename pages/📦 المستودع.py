@@ -301,41 +301,6 @@ with tab_list:
         subset=["الكمية"]
     )
     
-    st.dataframe(
-        styled_df,
-        hide_index=True,
-        width="stretch"
-    )
-
-st.dataframe(
-
-    styled_df,
-
-    hide_index=True,
-
-    width="stretch"
-
-)
-
-st.dataframe(
-
-    styled_df,
-
-    hide_index=True,
-
-    width="stretch"
-
-)
-
-st.dataframe(
-
-    styled_df,
-
-    hide_index=True,
-
-    width="stretch"
-
-)
         st.dataframe(
             styled_df,
             width="stretch",
