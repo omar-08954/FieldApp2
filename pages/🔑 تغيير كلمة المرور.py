@@ -46,7 +46,7 @@ with st.form("change_password_form"):
 
     submitted = st.form_submit_button(
         "💾 حفظ",
-        use_container_width=True
+        width="stretch"
     )
 
 # ======================================
@@ -54,6 +54,10 @@ with st.form("change_password_form"):
 # ======================================
 
 if submitted:
+
+    current_password = current_password.strip()
+    new_password = new_password.strip()
+    confirm_password = confirm_password.strip()
 
     if (
         not current_password
@@ -77,27 +81,21 @@ if submitted:
             "❌ يجب أن تكون كلمة المرور 4 أحرف على الأقل"
         )
 
-    else:
-
-        if check_current_password(
+    elif not check_current_password(
         st.session_state.username,
         current_password
-):
+    ):
 
-    change_password(
-        st.session_state.username,
-        new_password
-    )
+        st.error(
+            "❌ كلمة المرور الحالية غير صحيحة"
+        )
 
-    st.success(
-        "✅ تم تغيير كلمة المرور بنجاح."
-    )
+    else:
 
-else:
-
-    st.error(
-        "❌ كلمة المرور الحالية غير صحيحة."
-    )
+        change_password(
+            st.session_state.username,
+            new_password
+        )
 
         st.success(
             "✅ تم تغيير كلمة المرور بنجاح"
@@ -118,6 +116,7 @@ if st.button(
     st.session_state.fullname = ""
     st.session_state.username = ""
     st.session_state.role = ""
+    st.session_state.city = ""
 
     st.switch_page("app.py")
     
