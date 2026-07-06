@@ -385,6 +385,8 @@ def update_material(
         unit,
         notes):
 
+    material_id = int(material_id)
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -407,7 +409,6 @@ def update_material(
     cur.close()
     conn.close()
 
-
 # ======================================
 # زيادة كمية مادة
 # ======================================
@@ -416,13 +417,16 @@ def increase_material(
         material_id,
         quantity):
 
+    material_id = int(material_id)
+    quantity = int(quantity)
+
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
         UPDATE materials
-        SET quantity=quantity+%s
-        WHERE id=%s
+        SET quantity = quantity + %s
+        WHERE id = %s
     """, (
         quantity,
         material_id
@@ -442,10 +446,11 @@ def decrease_material(
         material_id,
         quantity):
 
+    material_id = int(material_id)
+    quantity = int(quantity)
+
     conn = get_connection()
     cur = conn.cursor()
-
-    # جلب الكمية الحالية
 
     cur.execute("""
         SELECT quantity
@@ -462,7 +467,7 @@ def decrease_material(
 
         return False
 
-    if material["quantity"] < quantity:
+    if int(material["quantity"]) < quantity:
 
         cur.close()
         conn.close()
@@ -471,8 +476,8 @@ def decrease_material(
 
     cur.execute("""
         UPDATE materials
-        SET quantity=quantity-%s
-        WHERE id=%s
+        SET quantity = quantity - %s
+        WHERE id = %s
     """, (
         quantity,
         material_id
@@ -485,12 +490,13 @@ def decrease_material(
 
     return True
 
-
 # ======================================
 # حذف مادة
 # ======================================
 
 def delete_material(material_id):
+
+    material_id = int(material_id)
 
     conn = get_connection()
     cur = conn.cursor()
