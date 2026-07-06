@@ -301,7 +301,7 @@ with tab_list:
         subset=["الكمية"]
     )
     
-        st.dataframe(
+    st.dataframe(
             styled_df,
             width="stretch",
             hide_index=True
