@@ -36,6 +36,29 @@ def login_user(username, password):
 
     return user
 
+def check_current_password(
+        username,
+        current_password):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id
+        FROM users
+        WHERE username=%s
+        AND password=%s
+    """, (
+        username,
+        current_password
+    ))
+
+    user = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    return user is not None
 
 def add_user(
         username,
