@@ -1,6 +1,9 @@
 import streamlit as st
 
-from database.database import change_password
+from database.database import (
+    change_password,
+    check_current_password
+)
 
 # ======================================
 # التحقق من تسجيل الدخول
@@ -76,10 +79,25 @@ if submitted:
 
     else:
 
-        change_password(
-            st.session_state.username,
-            new_password
-        )
+        if check_current_password(
+        st.session_state.username,
+        current_password
+):
+
+    change_password(
+        st.session_state.username,
+        new_password
+    )
+
+    st.success(
+        "✅ تم تغيير كلمة المرور بنجاح."
+    )
+
+else:
+
+    st.error(
+        "❌ كلمة المرور الحالية غير صحيحة."
+    )
 
         st.success(
             "✅ تم تغيير كلمة المرور بنجاح"
