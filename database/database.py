@@ -159,15 +159,15 @@ def task_exists(
         WHERE technician=%s
         AND task_number=%s
         AND subscription_number=%s
-        AND status=%s
-        AND COALESCE(notes,'')=
+        AND task_type=%s
+        AND COALESCE(task_status,'')=
             COALESCE(%s,'')
     """, (
         technician,
         task_number,
         subscription_number,
         task_type,
-        task_status
+        task_status  
     ))
 
     task = cur.fetchone()
@@ -196,8 +196,8 @@ def add_task(
             city,
             task_number,
             subscription_number,
-            status,
-            notes
+            task_type,
+            task_status
         )
         VALUES (%s,%s,%s,%s,%s,%s)
     """, (
@@ -229,8 +229,8 @@ def update_task(
         UPDATE tasks
         SET task_number=%s,
             subscription_number=%s,
-            status=%s,
-            notes=%s
+            task_type=%s,
+            task_status=%s
         WHERE id=%s
     """, (
         task_number,
