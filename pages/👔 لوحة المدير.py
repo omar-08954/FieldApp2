@@ -83,7 +83,7 @@ if len(df):
     completed_tasks = len(
 
         df[
-            df["status"].astype(str).str.contains(
+            df["task_type"].astype(str).str.contains(
                 "تم",
                 case=False,
                 na=False
