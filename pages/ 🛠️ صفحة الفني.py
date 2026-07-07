@@ -67,7 +67,7 @@ with st.form(
     )
 
     task_status = st.selectbox(
-        "📝 الملاحظات",
+        "📝 حالة المهمة",
         [
             "عائق",
             "تم الفحص",
