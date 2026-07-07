@@ -11,7 +11,9 @@ from database.database import (
 # ======================================
 
 if not st.session_state.get("logged_in", False):
+
     st.warning("يرجى تسجيل الدخول أولاً")
+
     st.stop()
 
 # ======================================
@@ -24,7 +26,7 @@ if st.session_state.get("role") not in [
 ]:
 
     st.error(
-        "ليس لديك صلاحية للوصول لهذه الصفحة"
+        "ليس لديك صلاحية للوصول لهذه الصفحة."
     )
 
     st.stop()
@@ -64,8 +66,8 @@ with st.form(
         ]
     )
 
-   task_status = st.selectbox(
-        "📝 حالة المهمة",
+    task_status = st.selectbox(
+        "📝 الملاحظات",
         [
             "عائق",
             "تم الفحص",
@@ -87,7 +89,7 @@ if submitted:
     if not task_number or not subscription_number:
 
         st.warning(
-            "⚠️ يرجى إدخال جميع البيانات المطلوبة"
+            "⚠️ يرجى إدخال جميع البيانات المطلوبة."
         )
 
     elif task_exists(
@@ -99,46 +101,57 @@ if submitted:
     ):
 
         st.error(
-            "❌ هذه المهمة مسجلة مسبقاً"
+            "❌ هذه المهمة مسجلة مسبقاً."
         )
 
     else:
 
         add_task(
             technician=st.session_state.fullname,
+            city=st.session_state.city,
             task_number=task_number,
             subscription_number=subscription_number,
             task_type=task_type,
             task_status=task_status
-            city=st.session_state.city
         )
 
         msg = st.success(
-            "✅ تم تسجيل المهمة بنجاح"
+            "✅ تم تسجيل المهمة بنجاح."
         )
 
-        # إظهار الرسالة لمدة 3 ثوانٍ
         time.sleep(3)
 
         msg.empty()
 
-        # الانتقال مباشرة لتسجيل مهمة جديدة
         st.rerun()
 
 # ======================================
-# تسجيل الخروج
+# العودة للرئيسية
 # ======================================
 
 st.divider()
 
 if st.button(
-    "🚪 تسجيل الخروج والعودة للرئيسية",
-    width="stretch"
+    "🏠 العودة للرئيسية",
+    use_container_width=True
+):
+
+    st.switch_page("app.py")
+
+# ======================================
+# تسجيل الخروج
+# ======================================
+
+if st.button(
+    "🚪 تسجيل الخروج",
+    use_container_width=True
 ):
 
     st.session_state.logged_in = False
     st.session_state.fullname = ""
     st.session_state.username = ""
     st.session_state.role = ""
+    st.session_state.city = ""
 
     st.switch_page("app.py")
+    
