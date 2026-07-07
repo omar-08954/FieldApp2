@@ -222,12 +222,15 @@ def update_task(
         task_type,
         task_status):
 
+    task_id = int(task_id)
+
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
         UPDATE tasks
-        SET task_number=%s,
+        SET
+            task_number=%s,
             subscription_number=%s,
             task_type=%s,
             task_status=%s
@@ -244,7 +247,6 @@ def update_task(
 
     cur.close()
     conn.close()
-
 
 def delete_task(task_id):
 
