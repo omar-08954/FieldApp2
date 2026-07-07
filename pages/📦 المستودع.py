@@ -1,601 +1,134 @@
-import streamlit as st
-import pandas as pd
 import time
 
+import pandas as pd
+import streamlit as st
+
 from database.database import (
-    get_all_materials,
     add_material,
+    decrease_material,
+    delete_material,
+    get_all_materials,
+    increase_material,
     material_exists,
     update_material,
-    increase_material,
-    decrease_material,
-    delete_material
 )
+from ui import init_page, page_header, require_login, top_nav
 
-# ======================================
-# التحقق من تسجيل الدخول
-# ======================================
 
-if not st.session_state.get("logged_in", False):
+UNITS = ["حبة", "متر", "بكرة", "كرتون", "رول", "كيس", "علبة", "أخرى"]
 
-    st.warning(
-        "يرجى تسجيل الدخول أولاً."
-    )
 
-    st.stop()
-
-# ======================================
-# صلاحيات المدير فقط
-# ======================================
-
-if st.session_state.get("role") != "admin":
-
-    st.error(
-        "ليس لديك صلاحية للوصول لهذه الصفحة."
-    )
-
-    st.stop()
-
-# ======================================
-# عنوان الصفحة
-# ======================================
-
-st.title("📦 المستودع")
-
-st.caption(
-    "إدارة مواد شركة الفكر الصاعد للمقاولات"
-)
-
-# ======================================
-# جلب المواد
-# ======================================
+init_page("المستودع")
+require_login(["admin"])
+top_nav()
+page_header("📦 المستودع", "إدارة المواد والكميات والتنبيهات المخزنية.")
 
 materials = get_all_materials()
-
-if materials:
-
-    df = pd.DataFrame(materials)
-
-else:
-
-    df = pd.DataFrame(
-        columns=[
-            "id",
-            "name",
-            "quantity",
-            "unit",
-            "notes"
-        ]
-    )
-
-# ======================================
-# الإحصائيات
-# ======================================
+df = pd.DataFrame(materials)
+if df.empty:
+    df = pd.DataFrame(columns=["id", "name", "quantity", "unit", "notes"])
 
 total_materials = len(df)
-
-if len(df):
-
-    total_quantity = int(
-        df["quantity"].sum()
-    )
-
-    low_stock = len(
-        df[
-            df["quantity"] <= 10
-        ]
-    )
-
-else:
-
-    total_quantity = 0
-    low_stock = 0
-
+total_quantity = int(df["quantity"].sum()) if total_materials else 0
+low_stock = int((df["quantity"] <= 10).sum()) if total_materials else 0
 c1, c2, c3 = st.columns(3)
+c1.metric("عدد المواد", total_materials)
+c2.metric("إجمالي الكمية", total_quantity)
+c3.metric("منخفضة المخزون", low_stock)
 
-c1.metric(
-    "📦 عدد المواد",
-    total_materials
-)
-
-c2.metric(
-    "📊 إجمالي الكمية",
-    total_quantity
-)
-
-c3.metric(
-    "⚠️ أوشكت على النفاد",
-    low_stock
-)
-
-st.divider()
-
-# ======================================
-# التبويبات
-# ======================================
-
-tab_add, tab_list, tab_manage = st.tabs(
-
-    [
-
-        "➕ إضافة مادة",
-
-        "📋 المواد",
-
-        "⚙️ إدارة مادة"
-
-    ]
-
-)
-
-# ======================================
-# تبويب إضافة مادة
-# ======================================
+tab_add, tab_list, tab_manage = st.tabs(["➕ إضافة مادة", "📋 المواد", "⚙️ إدارة مادة"])
 
 with tab_add:
-
-    st.subheader("➕ إضافة مادة جديدة")
-
-    with st.form(
-        "add_material_form",
-        clear_on_submit=True
-    ):
-
-        material_name = st.text_input(
-            "اسم المادة"
-        )
-
-        quantity = st.number_input(
-            "الكمية",
-            min_value=1,
-            step=1
-        )
-
-        unit = st.selectbox(
-            "الوحدة",
-            [
-                "حبة",
-                "متر",
-                "بكرة",
-                "كرتون",
-                "رول",
-                "كيس",
-                "علبة",
-                "أخرى"
-            ]
-        )
-
-        notes = st.text_area(
-            "الملاحظات (اختياري)",
-            height=80
-        )
-
-        add_btn = st.form_submit_button(
-            "➕ إضافة المادة",
-            width="stretch"
-        )
-
-    if add_btn:
-
-        material_name = material_name.strip()
-
-        if material_name == "":
-
-            st.warning(
-                "⚠️ يرجى إدخال اسم المادة."
-            )
-
-        elif material_exists(material_name):
-
-            st.error(
-                "❌ هذه المادة موجودة بالفعل."
-            )
-
-        else:
-
-            with st.spinner(
-                "⏳ جاري إضافة المادة..."
-            ):
-
-                add_material(
-                    material_name,
-                    int(quantity),
-                    unit,
-                    notes.strip()
-                )
-
-                time.sleep(1)
-
-            success = st.success(
-                "✅ تم إضافة المادة بنجاح."
-            )
-
-            time.sleep(3)
-
-            success.empty()
-
-            st.rerun()  
-
-
-# ======================================
-# تبويب المواد
-# ======================================
-
-with tab_list:
-
-    st.subheader("📋 المواد الموجودة")
-
-    search = st.text_input(
-        "🔍 ابحث باسم المادة أو الوحدة أو الملاحظات"
-    )
-
-    search_btn = st.button(
-        "🔍 بحث",
-        width="stretch"
-    )
-
-    filtered_df = df.copy()
-
-    if search_btn:
-
-        keyword = search.strip().lower()
-
-        if keyword:
-
-            filtered_df = filtered_df[
-                filtered_df.apply(
-                    lambda row:
-                    keyword in str(row["name"]).lower()
-                    or keyword in str(row["unit"]).lower()
-                    or keyword in str(row["notes"]).lower(),
-                    axis=1
-                )
-            ]
-
-        msg = st.success(
-            "✅ تم البحث بنجاح."
-        )
-
-        time.sleep(3)
-
-        msg.empty()
-
-    if len(filtered_df):
-
-        display_df = filtered_df.copy()
-
-        display_df = display_df.rename(
-            columns={
-                "name": "اسم المادة",
-                "quantity": "الكمية",
-                "unit": "الوحدة",
-                "notes": "الملاحظات"
-            }
-        )
-
-        display_df = display_df.drop(
-            columns=["id"],
-            errors="ignore"
-        )
-
-        # ======================================
-        # تلوين الكمية
-        # ======================================
-
-        def color_quantity(value):
-
-            try:
-                value = int(value)
-
-            except:
-                return ""
-
-            if value <= 10:
-
-                return (
-                    "background-color:#ffd6d6;"
-                    "color:black;"
-                    "font-weight:bold;"
-                )
-
-            elif value <= 20:
-
-                return (
-                    "background-color:#fff4c2;"
-                    "color:black;"
-                    "font-weight:bold;"
-                )
-
-            else:
-
-                return (
-                    "background-color:#d9ffd9;"
-                    "color:black;"
-                    "font-weight:bold;"
-                )
-
-        styled_df = display_df.style.map(
-            color_quantity,
-            subset=["الكمية"]
-        )
-
-        st.dataframe(
-            styled_df,
-            hide_index=True,
-            width="stretch"
-        )
-
-        st.caption(
-            f"📦 عدد النتائج : {len(filtered_df)}"
-        )
-
-    else:
-
-        st.warning(
-            "لا توجد مواد مطابقة للبحث."
-        )
-
-    st.divider()
-
-    st.info(
-        """
-🟢 مخزون جيد
-
-🟡 مخزون متوسط
-
-🔴 مخزون منخفض ويحتاج إعادة طلب
-"""
-    )
-
-# ======================================
-# تبويب إدارة مادة
-# ======================================
-
-with tab_manage:
-
-    st.subheader("⚙️ إدارة مادة")
-
-    if df.empty:
-
-        st.info(
-            "لا توجد مواد داخل المستودع."
-        )
-
-    else:
-
-        material_names = sorted(
-            df["name"].astype(str).tolist()
-        )
-
-        selected_name = st.selectbox(
-            "اختر المادة",
-            material_names
-        )
-
-        material = df[
-            df["name"] == selected_name
-        ].iloc[0]
-
-        st.success(
-            f"📦 الكمية الحالية : {material['quantity']} {material['unit']}"
-        )
-
-        if int(material["quantity"]) <= 10:
-
-            st.warning(
-                "⚠️ هذه المادة قاربت على النفاد."
-            )
-
-        st.divider()
-
+    with st.form("add_material_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
-
-        # ======================================
-        # تعديل المادة
-        # ======================================
-
         with col1:
-
-            st.subheader("✏️ تعديل المادة")
-
-            edit_name = st.text_input(
-                "اسم المادة",
-                value=material["name"]
-            )
-
-            units = [
-                "حبة",
-                "متر",
-                "بكرة",
-                "كرتون",
-                "رول",
-                "كيس",
-                "علبة",
-                "أخرى"
-            ]
-
-            current_unit = (
-                material["unit"]
-                if material["unit"] in units
-                else "أخرى"
-            )
-
-            edit_unit = st.selectbox(
-                "الوحدة",
-                units,
-                index=units.index(current_unit)
-            )
-
-            edit_notes = st.text_area(
-                "الملاحظات",
-                value=material["notes"] or ""
-            )
-
-            if st.button(
-                "💾 حفظ التعديلات",
-                width="stretch"
-            ):
-
-                with st.spinner(
-                    "⏳ جاري حفظ التعديلات..."
-                ):
-
-                    update_material(
-                        material["id"],
-                        edit_name.strip(),
-                        edit_unit,
-                        edit_notes.strip()
-                    )
-
-                    time.sleep(1)
-
-                msg = st.success(
-                    "✅ تم تعديل المادة بنجاح."
-                )
-
-                time.sleep(3)
-
-                msg.empty()
-
-                st.rerun()
-
-        # ======================================
-        # إدارة الكمية
-        # ======================================
-
+            name = st.text_input("اسم المادة")
+            quantity = st.number_input("الكمية", min_value=1, step=1)
         with col2:
-
-            st.subheader("📦 إدارة الكمية")
-
-            increase_qty = st.number_input(
-                "إضافة كمية",
-                min_value=1,
-                step=1,
-                key="increase_qty"
-            )
-
-            if st.button(
-                "➕ إضافة للمخزون",
-                width="stretch"
-            ):
-
-                with st.spinner(
-                    "⏳ جاري إضافة الكمية..."
-                ):
-
-                    increase_material(
-                        material["id"],
-                        int(increase_qty)
-                    )
-
-                    time.sleep(1)
-
-                msg = st.success(
-                    "✅ تمت إضافة الكمية بنجاح."
-                )
-
-                time.sleep(3)
-
-                msg.empty()
-
-                st.rerun()
-
-            st.divider()
-
-            decrease_qty = st.number_input(
-                "خصم كمية",
-                min_value=1,
-                step=1,
-                key="decrease_qty"
-            )
-
-            if st.button(
-                "➖ خصم من المخزون",
-                width="stretch"
-            ):
-
-                with st.spinner(
-                    "⏳ جاري خصم الكمية..."
-                ):
-
-                    success = decrease_material(
-                        material["id"],
-                        int(decrease_qty)
-                    )
-
-                    time.sleep(1)
-
-                if success:
-
-                    msg = st.success(
-                        "✅ تم خصم الكمية بنجاح."
-                    )
-
-                    time.sleep(3)
-
-                    msg.empty()
-
-                    st.rerun()
-
-                else:
-
-                    st.error(
-                        "❌ الكمية المطلوبة أكبر من الكمية الموجودة."
-                    )
-
-        st.divider()
-
-        # ======================================
-        # حذف المادة
-        # ======================================
-
-        st.subheader("🗑 حذف المادة")
-
-        confirm_delete = st.checkbox(
-            "أؤكد حذف المادة نهائياً"
-        )
-
-        if st.button(
-            "🗑 حذف المادة",
-            width="stretch",
-            disabled=not confirm_delete
-        ):
-
-            with st.spinner(
-                "⏳ جاري حذف المادة..."
-            ):
-
-                delete_material(
-                    material["id"]
-                )
-
-                time.sleep(1)
-
-            msg = st.success(
-                "✅ تم حذف المادة بنجاح."
-            )
-
-            time.sleep(3)
-
-            msg.empty()
-
+            unit = st.selectbox("الوحدة", UNITS)
+            notes = st.text_area("الملاحظات", height=100)
+        submitted = st.form_submit_button("➕ إضافة المادة", use_container_width=True)
+    if submitted:
+        name = name.strip()
+        if not name:
+            st.warning("يرجى إدخال اسم المادة.")
+        elif material_exists(name):
+            st.error("هذه المادة موجودة بالفعل.")
+        else:
+            with st.spinner("جاري إضافة المادة..."):
+                add_material(name, quantity, unit, notes)
+                time.sleep(0.4)
+            st.success("✅ تم إضافة المادة بنجاح.")
             st.rerun()
 
-# ======================================
-# تسجيل الخروج
-# ======================================
+with tab_list:
+    search = st.text_input("بحث باسم المادة أو الوحدة أو الملاحظات")
+    filtered = df.copy()
+    if search:
+        filtered = filtered[
+            filtered["name"].astype(str).str.contains(search, case=False, na=False)
+            | filtered["unit"].astype(str).str.contains(search, case=False, na=False)
+            | filtered["notes"].astype(str).str.contains(search, case=False, na=False)
+        ]
+    display = filtered.rename(
+        columns={
+            "name": "اسم المادة",
+            "quantity": "الكمية",
+            "unit": "الوحدة",
+            "notes": "الملاحظات",
+            "created_at": "تاريخ الإضافة",
+            "updated_at": "آخر تحديث",
+        }
+    ).drop(columns=["id"], errors="ignore")
+    st.dataframe(display, hide_index=True, use_container_width=True)
+    st.caption(f"عدد النتائج: {len(filtered)}")
 
-st.divider()
+with tab_manage:
+    if df.empty:
+        st.info("لا توجد مواد داخل المستودع.")
+    else:
+        selected_name = st.selectbox("اختر المادة", sorted(df["name"].astype(str).tolist()))
+        material = df[df["name"] == selected_name].iloc[0]
+        st.success(f"الكمية الحالية: {material['quantity']} {material['unit']}")
+        if int(material["quantity"]) <= 10:
+            st.warning("هذه المادة منخفضة المخزون.")
 
-if st.button(
-    "🚪 تسجيل الخروج والعودة للرئيسية",
-    width="stretch"
-):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("✏️ تعديل المادة")
+            edit_name = st.text_input("اسم المادة", value=material["name"])
+            current_unit = material["unit"] if material["unit"] in UNITS else "أخرى"
+            edit_unit = st.selectbox("الوحدة", UNITS, index=UNITS.index(current_unit))
+            edit_notes = st.text_area("الملاحظات", value=material["notes"] or "", height=120)
+            if st.button("💾 حفظ التعديلات", use_container_width=True):
+                if material_exists(edit_name, exclude_id=material["id"]):
+                    st.error("اسم المادة مستخدم بالفعل.")
+                else:
+                    update_material(material["id"], edit_name, edit_unit, edit_notes)
+                    st.success("✅ تم تعديل المادة بنجاح.")
+                    st.rerun()
 
-    st.session_state.logged_in = False
-    st.session_state.fullname = ""
-    st.session_state.username = ""
-    st.session_state.role = ""
-    st.session_state.city = ""
+        with col2:
+            st.subheader("📦 إدارة الكمية")
+            increase_qty = st.number_input("إضافة كمية", min_value=1, step=1, key="increase_qty")
+            if st.button("➕ إضافة للمخزون", use_container_width=True):
+                increase_material(material["id"], increase_qty)
+                st.success("✅ تمت إضافة الكمية بنجاح.")
+                st.rerun()
 
-    st.switch_page("app.py")
+            decrease_qty = st.number_input("خصم كمية", min_value=1, step=1, key="decrease_qty")
+            if st.button("➖ خصم من المخزون", use_container_width=True):
+                if decrease_material(material["id"], decrease_qty):
+                    st.success("✅ تم خصم الكمية بنجاح.")
+                    st.rerun()
+                else:
+                    st.error("الكمية المطلوبة أكبر من الكمية الموجودة.")
+
+        st.divider()
+        st.subheader("🗑 حذف المادة")
+        st.warning("هل أنت متأكد من حذف المادة؟")
+        confirm = st.checkbox("نعم، أؤكد حذف المادة نهائياً")
+        if st.button("🗑 حذف المادة", disabled=not confirm, use_container_width=True):
+            delete_material(material["id"])
+            st.success("✅ تم حذف المادة بنجاح.")
+            st.rerun()

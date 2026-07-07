@@ -1,93 +1,28 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 from database.database import get_all_tasks
+from ui import CITIES, init_page, page_header, require_login, task_dataframe, top_nav
 
-if not st.session_state.get("logged_in", False):
-    st.warning("يرجى تسجيل الدخول أولاً")
+
+init_page("التقارير")
+require_login(["admin"])
+top_nav()
+page_header("📑 التقارير", "تقارير المدن والمهام قابلة للتصفية والتصدير.")
+
+df = pd.DataFrame(get_all_tasks())
+if df.empty:
+    st.info("لا توجد بيانات.")
     st.stop()
 
-if st.session_state.role != "admin":
-    st.error("ليس لديك صلاحية للوصول لهذه الصفحة")
-    st.stop()
+city = st.selectbox("المدينة", ["الكل"] + CITIES)
+filtered = df if city == "الكل" else df[df["city"] == city]
 
-st.title("📑 التقارير")
+c1, c2, c3 = st.columns(3)
+c1.metric("إجمالي النتائج", len(filtered))
+c2.metric("مكة", int((df["city"] == "مكة").sum()))
+c3.metric("جدة", int((df["city"] == "جدة").sum()))
 
-tasks = get_all_tasks()
-
-if not tasks:
-    st.info("لا توجد بيانات")
-    st.stop()
-
-df = pd.DataFrame([dict(task) for task in tasks])
-
-tab1, tab2 = st.tabs([
-    "🕋 تقارير مكة",
-    "🌊 تقارير جدة"
-])
-
-with tab1:
-
-    makkah = df[df["city"] == "مكة"]
-
-    st.metric(
-        "إجمالي مهام مكة",
-        len(makkah)
-    )
-
-    st.dataframe(
-        makkah,
-        use_container_width=True
-    )
-
-    csv = makkah.to_csv(
-        index=False
-    ).encode("utf-8-sig")
-
-    st.download_button(
-        "📥 تحميل تقرير مكة",
-        csv,
-        "makkah_report.csv",
-        "text/csv"
-    )
-
-with tab2:
-
-    jeddah = df[df["city"] == "جدة"]
-
-    st.metric(
-        "إجمالي مهام جدة",
-        len(jeddah)
-    )
-
-    st.dataframe(
-        jeddah,
-        use_container_width=True
-    )
-
-    csv = jeddah.to_csv(
-        index=False
-    ).encode("utf-8-sig")
-
-    st.download_button(
-        "📥 تحميل تقرير جدة",
-        csv,
-        "jeddah_report.csv",
-        "text/csv"
-    )
-    # ======================================
-    # تسجيل الخروج
-    # ======================================
-
-if st.button(
-    "🚪 تسجيل الخروج والعودة للرئيسية",
-    width="stretch"
-):
-
-    st.session_state.logged_in = False
-    st.session_state.fullname = ""
-    st.session_state.username = ""
-    st.session_state.role = ""
-    st.session_state.city = ""
-
-    st.switch_page("app.py")
+task_dataframe(filtered)
+csv = filtered.to_csv(index=False).encode("utf-8-sig")
+st.download_button("📥 تحميل التقرير", csv, "tasks_report.csv", "text/csv", use_container_width=True)

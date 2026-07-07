@@ -1,277 +1,64 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 from database.database import get_all_tasks
+from ui import TASK_STATUSES, TASK_TYPES, init_page, page_header, require_login, task_dataframe, top_nav
 
-# ======================================
-# التحقق من تسجيل الدخول
-# ======================================
 
-if not st.session_state.get("logged_in", False):
-    st.warning("يرجى تسجيل الدخول أولاً")
+init_page("لوحة التحكم")
+require_login(["admin"])
+top_nav()
+page_header("📊 لوحة التحكم", "نظرة تنفيذية على المهام وأداء الفنيين.")
+
+df = pd.DataFrame(get_all_tasks())
+if df.empty:
+    st.info("لا توجد مهام حتى الآن.")
     st.stop()
 
-if st.session_state.get("role") != "admin":
-    st.error("ليس لديك صلاحية للوصول لهذه الصفحة")
-    st.stop()
+total = len(df)
+technical = int((df["task_type"] == "تقني").sum())
+zira = int((df["task_type"] == "زيرا").sum())
+best_tech = df["technician"].value_counts().idxmax() if total else "-"
 
-# ======================================
-# العنوان
-# ======================================
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("إجمالي المهام", total)
+c2.metric("مهام تقني", technical)
+c3.metric("مهام زيرا", zira)
+c4.metric("أفضل فني", best_tech)
 
-st.title("📊 لوحة التحكم")
+st.divider()
+status_counts = df["task_status"].value_counts()
+cols = st.columns(len(TASK_STATUSES))
+for col, status in zip(cols, TASK_STATUSES):
+    col.metric(status, int(status_counts.get(status, 0)))
 
-# ======================================
-# جلب البيانات
-# ======================================
-
-tasks = get_all_tasks()
-
-if not tasks:
-    st.info("لا توجد مهام حتى الآن")
-    st.stop()
-
-# تحويل البيانات بشكل صحيح
-df = pd.DataFrame([dict(task) for task in tasks])
-
-# ======================================
-# الإحصائيات الرئيسية
-# ======================================
-
-total_tasks = len(df)
-
-technical_tasks = len(
-    df[
-        df["status"]
-        .astype(str)
-        .str.contains("تقني", na=False)
-    ]
-)
-
-zira_tasks = len(
-    df[
-        df["status"]
-        .astype(str)
-        .str.contains("زيرا", na=False)
-    ]
-)
-
-best_tech = (
-    df["technician"]
-    .value_counts()
-    .idxmax()
-)
-
+st.divider()
 col1, col2, col3 = st.columns(3)
+with col1:
+    technician = st.selectbox("الفني", ["الكل"] + sorted(df["technician"].dropna().unique().tolist()))
+with col2:
+    task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES)
+with col3:
+    task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES)
+search = st.text_input("بحث برقم المهمة أو الاشتراك أو الفني")
 
-col1.metric(
-    "📋 إجمالي المهام",
-    total_tasks
-)
-
-col2.metric(
-    "🛠️ مهام تقني",
-    technical_tasks
-)
-
-col3.metric(
-    "🔧 مهام زيرا",
-    zira_tasks
-)
-
-st.divider()
-
-# ======================================
-# أفضل فني
-# ======================================
-
-st.subheader("🏆 أفضل فني")
-
-st.success(best_tech)
-
-st.divider()
-
-# ======================================
-# حالات المهام
-# ======================================
-
-obstacle = len(
-    df[
-        df["notes"]
-        .astype(str)
-        .str.contains("عائق", na=False)
+filtered = df.copy()
+if technician != "الكل":
+    filtered = filtered[filtered["technician"] == technician]
+if task_type != "الكل":
+    filtered = filtered[filtered["task_type"] == task_type]
+if task_status != "الكل":
+    filtered = filtered[filtered["task_status"] == task_status]
+if search:
+    filtered = filtered[
+        filtered["task_number"].astype(str).str.contains(search, case=False, na=False)
+        | filtered["subscription_number"].astype(str).str.contains(search, case=False, na=False)
+        | filtered["technician"].astype(str).str.contains(search, case=False, na=False)
     ]
-)
-
-checked = len(
-    df[
-        df["notes"]
-        .astype(str)
-        .str.contains("تم الفحص", na=False)
-    ]
-)
-
-removed = len(
-    df[
-        df["notes"]
-        .astype(str)
-        .str.contains("مزال", na=False)
-    ]
-)
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric(
-    "🚧 عائق",
-    obstacle
-)
-
-col2.metric(
-    "✔️ تم الفحص",
-    checked
-)
-
-col3.metric(
-    "🗑️ مزال",
-    removed
-)
-
-st.divider()
-
-# ======================================
-# البحث والتصفية
-# ======================================
-
-import time
-
-st.subheader("🔍 البحث والتصفية")
-
-technicians = ["الكل"] + sorted(
-    df["technician"].dropna().unique().tolist()
-)
-
-selected_tech = st.selectbox(
-    "اختر الفني",
-    technicians
-)
-
-search = st.text_input(
-    "اكتب اسم الفني او رقم المهمة او رقم الإشتراك"
-)
-
-search_button = st.button(
-    "🔍 بحث",
-    width="stretch"
-)
-
-filtered_df = df.copy()
-
-if search_button:
-
-    if selected_tech != "الكل":
-
-        filtered_df = filtered_df[
-            filtered_df["technician"] == selected_tech
-        ]
-
-    if search:
-
-        filtered_df = filtered_df[
-            filtered_df["task_number"]
-                .astype(str)
-                .str.contains(search, case=False, na=False)
-
-            |
-
-            filtered_df["subscription_number"]
-                .astype(str)
-                .str.contains(search, case=False, na=False)
-
-            |
-
-            filtered_df["technician"]
-                .astype(str)
-                .str.contains(search, case=False, na=False)
-        ]
-
-    msg = st.success(
-        "✅ تم البحث عن المهمة بنجاح"
-    )
-
-    time.sleep(3)
-
-    msg.empty()
-
-elif selected_tech != "الكل":
-
-    filtered_df = filtered_df[
-        filtered_df["technician"] == selected_tech
-    ]  
-    
-st.divider()
-
-# ======================================
-# أداء الفنيين
-# ======================================
 
 st.subheader("📈 أداء الفنيين")
-
-chart_df = (
-    df.groupby("technician")
-      .size()
-      .reset_index(name="عدد المهام")
-      .set_index("technician")
-)
-
+chart_df = df.groupby("technician").size().reset_index(name="عدد المهام").set_index("technician")
 st.bar_chart(chart_df)
 
-st.divider()
-
-# ======================================
-# عرض المهام
-# ======================================
-
 st.subheader("📋 المهام")
-
-st.dataframe(
-    filtered_df,
-    width="stretch",
-    hide_index=True
-)
-
-st.divider()
-
-# ======================================
-# تصدير Excel
-# ======================================
-
-csv = filtered_df.to_csv(
-    index=False
-).encode("utf-8-sig")
-
-st.download_button(
-    "📥 تحميل Excel",
-    csv,
-    "tasks.csv",
-    "text/csv",
-    width="stretch"
-)
-
-st.divider()
-
-# ======================================
-# تسجيل الخروج
-# ======================================
-
-if st.button(
-    "🚪 تسجيل الخروج والعودة للرئيسية",
-    width="stretch"
-):
-
-    st.session_state.logged_in = False
-    st.session_state.fullname = ""
-    st.session_state.username = ""
-    st.session_state.role = ""
-    st.session_state.city = ""
-
-    st.switch_page("app.py")
+task_dataframe(filtered)
