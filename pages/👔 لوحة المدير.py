@@ -522,7 +522,7 @@ with tab_edit:
             ],
 
             index=0
-            if task["status"] == "تقني"
+            if task["task_type"] == "تقني"
             else 1
 
         )
@@ -531,7 +531,7 @@ with tab_edit:
 
             "حالة المهمة",
 
-            value=task["notes"]
+            value=task["task_status"]
 
         )
 
