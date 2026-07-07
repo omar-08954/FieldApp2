@@ -64,10 +64,9 @@ with st.form(
         ]
     )
 
-    notes = st.selectbox(
+   task_status = st.selectbox(
         "📝 حالة المهمة",
         [
-            "",
             "عائق",
             "تم الفحص",
             "مزال"
@@ -96,7 +95,7 @@ if submitted:
         task_number,
         subscription_number,
         task_type,
-        notes
+        task_status
     ):
 
         st.error(
@@ -109,8 +108,8 @@ if submitted:
             technician=st.session_state.fullname,
             task_number=task_number,
             subscription_number=subscription_number,
-            status=task_type,
-            notes=notes,
+            task_type=task_type,
+            task_status=task_status
             city=st.session_state.city
         )
 
