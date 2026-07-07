@@ -500,84 +500,86 @@ with tab_edit:
 
     if "edit_task" in st.session_state:
 
-        task = st.session_state.edit_task
+    task = st.session_state.edit_task
 
-        st.divider()
+    st.divider()
 
-        technician = st.text_input(
-            "الفني",
-            value=task["technician"]
-        )
+    task_number = st.text_input(
+        "رقم المهمة",
+        value=task["task_number"]
+    )
 
-        task_type = st.selectbox(
+    subscription_number = st.text_input(
+        "رقم الاشتراك",
+        value=task["subscription_number"]
+    )
 
-            "نوع المهمة",
+    technician = st.text_input(
+        "الفني",
+        value=task["technician"],
+        disabled=True
+    )
 
-            [
+    task_type = st.selectbox(
+        "نوع المهمة",
+        [
+            "تقني",
+            "زيرا"
+        ],
+        index=0 if task["task_type"] == "تقني" else 1
+    )
 
-                "تقني",
+    task_status = st.selectbox(
+        "حالة المهمة",
+        [
+            "عائق",
+            "تم الفحص",
+            "مزال"
+        ],
+        index=[
+            "عائق",
+            "تم الفحص",
+            "مزال"
+        ].index(task["task_status"])
+        if task["task_status"] in [
+            "عائق",
+            "تم الفحص",
+            "مزال"
+        ]
+        else 0
+    )
 
-                "زيرا"
+    if st.button(
+        "💾 حفظ التعديلات",
+        width="stretch"
+    ):
 
-            ],
-
-            index=0
-            if task["task_type"] == "تقني"
-            else 1
-
-        )
-
-        task_status = st.text_input(
-
-            "حالة المهمة",
-
-            value=task["task_status"]
-
-        )
-
-        if st.button(
-
-            "💾 حفظ التعديلات",
-
-            width="stretch"
-
+        with st.spinner(
+            "⏳ جاري حفظ التعديلات..."
         ):
 
-            with st.spinner(
-
-                "⏳ جاري حفظ التعديلات..."
-
-            ):
-
-                update_task(
-
-        int(task["id"]),
-
-        task["task_number"],
-
-        task["subscription_number"],
-
-        task_type,
-
-        task_status
-
-)
-
-                time.sleep(1)
-
-            msg = st.success(
-
-                "✅ تم تعديل المهمة بنجاح."
-
+            update_task(
+                int(task["id"]),
+                task_number.strip(),
+                subscription_number.strip(),
+                task_type,
+                task_status
             )
 
-            time.sleep(3)
+            time.sleep(1)
 
-            msg.empty()
+        msg = st.success(
+            "✅ تم تعديل المهمة بنجاح."
+        )
 
-            del st.session_state["edit_task"]
+        time.sleep(3)
 
-            st.rerun()
+        msg.empty()
+
+        del st.session_state["edit_task"]
+
+        st.rerun()
+
 
 # ======================================
 # تبويب حذف المهمة
