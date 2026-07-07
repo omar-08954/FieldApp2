@@ -147,8 +147,8 @@ def task_exists(
         technician,
         task_number,
         subscription_number,
-        status,
-        notes):
+        task_type,
+        task_status):
 
     conn = get_connection()
     cur = conn.cursor()
@@ -166,8 +166,8 @@ def task_exists(
         technician,
         task_number,
         subscription_number,
-        status,
-        notes
+        task_type,
+        task_status
     ))
 
     task = cur.fetchone()
@@ -183,8 +183,8 @@ def add_task(
         city,
         task_number,
         subscription_number,
-        status,
-        notes):
+        task_type,
+        task_status):
 
     conn = get_connection()
     cur = conn.cursor()
@@ -205,8 +205,8 @@ def add_task(
         city,
         task_number,
         subscription_number,
-        status,
-        notes
+        task_type,
+        task_status
     ))
 
     conn.commit()
@@ -219,8 +219,8 @@ def update_task(
         task_id,
         task_number,
         subscription_number,
-        status,
-        notes):
+        task_type,
+        task_status):
 
     conn = get_connection()
     cur = conn.cursor()
@@ -235,8 +235,8 @@ def update_task(
     """, (
         task_number,
         subscription_number,
-        status,
-        notes,
+        task_type,
+        task_status,
         task_id
     ))
 
