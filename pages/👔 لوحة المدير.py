@@ -64,8 +64,8 @@ else:
             "city",
             "task_number",
             "subscription_number",
-            "status",
-            "notes",
+            "task_type",
+            "task_status",
             "created_at"
         ]
     )
@@ -281,8 +281,8 @@ with tab_tasks:
                 "technician":"الفني",
                 "task_number":"رقم المهمة",
                 "subscription_number":"رقم الاشتراك",
-                "status":"نوع المهمة",
-                "notes":"حالة المهمة"
+                "task_type":"نوع المهمة",
+                "task_status":"حالة المهمة"
             }
         )
 
@@ -380,9 +380,9 @@ with tab_tasks:
 
             "subscription_number":"رقم الاشتراك",
 
-            "status":"نوع المهمة",
+            "task_type":"نوع المهمة",
 
-            "notes":"حالة المهمة"
+            "task_status":"حالة المهمة"
 
         }
 
@@ -688,9 +688,9 @@ with tab_delete:
 
 رقم الاشتراك : {task["subscription_number"]}
 
-نوع المهمة : {task["status"]}
+نوع المهمة : {task["task_type"]}
 
-حالة المهمة : {task["notes"]}
+حالة المهمة : {task["task_status"]}
 """
         )
 
