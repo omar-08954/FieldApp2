@@ -125,18 +125,22 @@ def inject_style():
 def logout():
     for key in ["logged_in", "fullname", "username", "role", "city"]:
         st.session_state[key] = False if key == "logged_in" else ""
-    st.switch_page(PAGES["home"])
+
+    st.session_state.clear()
+
+    st.switch_page("app.py")
 
 
 def require_login(roles=None):
     init_session()
-    if not st.session_state.get("logged_in"):
-        st.warning("يرجى تسجيل الدخول أولاً.")
-        st.stop()
-    if roles and st.session_state.get("role") not in roles:
-        st.error("ليس لديك صلاحية للوصول لهذه الصفحة.")
+
+    if not st.session_state.get("logged_in", False):
+        st.switch_page("app.py")
         st.stop()
 
+    if roles and st.session_state.get("role") not in roles:
+        st.switch_page("app.py")
+        st.stop()
 
 def top_nav():
     st.markdown('<div class="top-nav">', unsafe_allow_html=True)
