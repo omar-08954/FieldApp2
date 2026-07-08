@@ -47,7 +47,7 @@ with tab_add:
         with col2:
             unit = st.selectbox("الوحدة", UNITS)
             notes = st.text_area("الملاحظات", height=100)
-        submitted = st.form_submit_button("➕ إضافة المادة", use_container_width=True)
+        submitted = st.form_submit_button("➕ إضافة المادة", width="stretch")
     if submitted:
         name = name.strip()
         if not name:
@@ -80,7 +80,7 @@ with tab_list:
             "updated_at": "آخر تحديث",
         }
     ).drop(columns=["id"], errors="ignore")
-    st.dataframe(display, hide_index=True, use_container_width=True)
+    st.dataframe(display, hide_index=True, width="stretch")
     st.caption(f"عدد النتائج: {len(filtered)}")
 
 with tab_manage:
@@ -100,7 +100,7 @@ with tab_manage:
             current_unit = material["unit"] if material["unit"] in UNITS else "أخرى"
             edit_unit = st.selectbox("الوحدة", UNITS, index=UNITS.index(current_unit))
             edit_notes = st.text_area("الملاحظات", value=material["notes"] or "", height=120)
-            if st.button("💾 حفظ التعديلات", use_container_width=True):
+            if st.button("💾 حفظ التعديلات", width="stretch"):
                 if material_exists(edit_name, exclude_id=material["id"]):
                     st.error("اسم المادة مستخدم بالفعل.")
                 else:
@@ -111,13 +111,13 @@ with tab_manage:
         with col2:
             st.subheader("📦 إدارة الكمية")
             increase_qty = st.number_input("إضافة كمية", min_value=1, step=1, key="increase_qty")
-            if st.button("➕ إضافة للمخزون", use_container_width=True):
+            if st.button("➕ إضافة للمخزون", width="stretch"):
                 increase_material(material["id"], increase_qty)
                 st.success("✅ تمت إضافة الكمية بنجاح.")
                 st.rerun()
 
             decrease_qty = st.number_input("خصم كمية", min_value=1, step=1, key="decrease_qty")
-            if st.button("➖ خصم من المخزون", use_container_width=True):
+            if st.button("➖ خصم من المخزون", width="stretch"):
                 if decrease_material(material["id"], decrease_qty):
                     st.success("✅ تم خصم الكمية بنجاح.")
                     st.rerun()
@@ -128,7 +128,7 @@ with tab_manage:
         st.subheader("🗑 حذف المادة")
         st.warning("هل أنت متأكد من حذف المادة؟")
         confirm = st.checkbox("نعم، أؤكد حذف المادة نهائياً")
-        if st.button("🗑 حذف المادة", disabled=not confirm, use_container_width=True):
+        if st.button("🗑 حذف المادة", disabled=not confirm, width="stretch"):
             delete_material(material["id"])
             st.success("✅ تم حذف المادة بنجاح.")
             st.rerun()

@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from database.database import get_all_tasks
+from database.database import search_tasks
 from ui import TASK_STATUSES, TASK_TYPES, init_page, page_header, require_login, task_dataframe, top_nav
 
 
@@ -10,7 +10,7 @@ require_login(["admin"])
 top_nav()
 page_header("📊 لوحة التحكم", "نظرة تنفيذية على المهام وأداء الفنيين.")
 
-df = pd.DataFrame(get_all_tasks())
+df = pd.DataFrame(search_tasks())
 if df.empty:
     st.info("لا توجد مهام حتى الآن.")
     st.stop()
@@ -40,21 +40,9 @@ with col2:
     task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES)
 with col3:
     task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES)
-search = st.text_input("بحث برقم المهمة أو الاشتراك أو الفني")
+search = st.text_input("بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها")
 
-filtered = df.copy()
-if technician != "الكل":
-    filtered = filtered[filtered["technician"] == technician]
-if task_type != "الكل":
-    filtered = filtered[filtered["task_type"] == task_type]
-if task_status != "الكل":
-    filtered = filtered[filtered["task_status"] == task_status]
-if search:
-    filtered = filtered[
-        filtered["task_number"].astype(str).str.contains(search, case=False, na=False)
-        | filtered["subscription_number"].astype(str).str.contains(search, case=False, na=False)
-        | filtered["technician"].astype(str).str.contains(search, case=False, na=False)
-    ]
+filtered = pd.DataFrame(search_tasks(search, technician, task_type, task_status))
 
 st.subheader("📈 أداء الفنيين")
 chart_df = df.groupby("technician").size().reset_index(name="عدد المهام").set_index("technician")

@@ -3,7 +3,6 @@ import streamlit as st
 
 TASK_TYPES = ["تقني", "زيرا"]
 TASK_STATUSES = ["عائق", "تم الفحص", "مزال"]
-CITIES = ["مكة", "جدة"]
 
 
 PAGES = {
@@ -14,7 +13,7 @@ PAGES = {
     "reports": "pages/📑صفحة التقارير.py",
     "inventory": "pages/📦 المستودع.py",
     "users": "pages/👥 إدارة المستخدمين.py",
-    "settings": "pages/🔑 تغيير كلمة المرور.py",
+    "change_password": "pages/🔑 تغيير كلمة المرور.py",
 }
 
 
@@ -149,10 +148,10 @@ def top_nav():
             unsafe_allow_html=True,
         )
     with col2:
-        if st.button("🏠 الرئيسية", use_container_width=True):
+        if st.button("🏠 الرئيسية", width="stretch"):
             st.switch_page(PAGES["home"])
     with col3:
-        if st.button("🚪 تسجيل الخروج", use_container_width=True):
+        if st.button("🚪 تسجيل الخروج", width="stretch"):
             logout()
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -173,14 +172,10 @@ def task_dataframe(df):
         columns={
             "id": "المعرف",
             "technician": "الفني",
-            "city": "المدينة",
             "task_number": "رقم المهمة",
             "subscription_number": "رقم الاشتراك",
             "task_type": "نوع المهمة",
             "task_status": "حالة المهمة",
-            "notes": "الملاحظات",
-            "created_at": "تاريخ التسجيل",
-            "updated_at": "آخر تحديث",
         }
     )
-    st.dataframe(display, hide_index=True, use_container_width=True)
+    st.dataframe(display, hide_index=True, width="stretch")

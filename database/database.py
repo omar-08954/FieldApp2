@@ -4,6 +4,7 @@ from psycopg2.extras import RealDictCursor
 
 
 DATABASE_URL = st.secrets["DATABASE_URL"]
+TASK_COLUMNS = "id, technician, task_number, subscription_number, task_type, task_status"
 
 
 def get_connection():
@@ -60,12 +61,10 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS tasks (
             id SERIAL PRIMARY KEY,
             technician TEXT NOT NULL,
-            city TEXT,
             task_number TEXT NOT NULL,
             subscription_number TEXT NOT NULL,
             task_type TEXT NOT NULL,
-            task_status TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            task_status TEXT NOT NULL
         )
         """
     )
@@ -81,11 +80,10 @@ def create_tables():
         )
         """
     )
-    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''")
-    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
     cur.execute("ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_task_number ON tasks(task_number)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_filters ON tasks(technician, city, task_type, task_status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_subscription_number ON tasks(subscription_number)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_type_status ON tasks(task_type, task_status)")
     conn.commit()
     cur.close()
     conn.close()
@@ -152,35 +150,30 @@ def task_exists(task_number, exclude_id=None):
     ) is not None
 
 
-def add_task(technician, city, task_number, subscription_number, task_type, task_status, notes=""):
+def add_task(technician, task_number, subscription_number, task_type, task_status):
     execute(
         """
-        INSERT INTO tasks
-        (technician, city, task_number, subscription_number, task_type, task_status, notes)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO tasks (technician, task_number, subscription_number, task_type, task_status)
+        VALUES (%s, %s, %s, %s, %s)
         """,
         (
             technician.strip(),
-            city.strip() if city else "",
             task_number.strip(),
             subscription_number.strip(),
             task_type,
             task_status,
-            notes.strip(),
         ),
     )
 
 
-def update_task(task_id, task_number, subscription_number, task_type, task_status, notes=""):
+def update_task(task_id, task_number, subscription_number, task_type, task_status):
     execute(
         """
         UPDATE tasks
         SET task_number = %s,
             subscription_number = %s,
             task_type = %s,
-            task_status = %s,
-            notes = %s,
-            updated_at = CURRENT_TIMESTAMP
+            task_status = %s
         WHERE id = %s
         """,
         (
@@ -188,7 +181,6 @@ def update_task(task_id, task_number, subscription_number, task_type, task_statu
             subscription_number.strip(),
             task_type,
             task_status,
-            notes.strip(),
             int(task_id),
         ),
     )
@@ -199,44 +191,58 @@ def delete_task(task_id):
 
 
 def get_all_tasks():
-    return fetch_all("SELECT * FROM tasks ORDER BY id DESC")
+    return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks ORDER BY id DESC")
 
 
-def get_task_by_number(task_number):
-    return fetch_one(
-        "SELECT * FROM tasks WHERE task_number = %s ORDER BY id DESC LIMIT 1",
-        (task_number.strip(),),
-    )
-
-
-def search_tasks(keyword="", technician="", city="", task_type="", task_status=""):
-    query = "SELECT * FROM tasks WHERE 1 = 1"
+def _task_filter_clause(technician="", task_type="", task_status=""):
+    clauses = []
     params = []
-    if keyword:
-        query += """
-            AND (
-                task_number ILIKE %s
-                OR subscription_number ILIKE %s
-                OR technician ILIKE %s
-                OR COALESCE(notes, '') ILIKE %s
-            )
-        """
-        like = f"%{keyword.strip()}%"
-        params.extend([like, like, like, like])
     if technician and technician != "الكل":
-        query += " AND technician = %s"
+        clauses.append("technician = %s")
         params.append(technician)
-    if city and city != "الكل":
-        query += " AND city = %s"
-        params.append(city)
     if task_type and task_type != "الكل":
-        query += " AND task_type = %s"
+        clauses.append("task_type = %s")
         params.append(task_type)
     if task_status and task_status != "الكل":
-        query += " AND task_status = %s"
+        clauses.append("task_status = %s")
         params.append(task_status)
-    query += " ORDER BY id DESC"
+    return clauses, params
+
+
+def _search_by_field(field, keyword, technician="", task_type="", task_status="", limit=None):
+    clauses, params = _task_filter_clause(technician, task_type, task_status)
+    clauses.append(f"{field} ILIKE %s")
+    params.append(f"%{keyword.strip()}%")
+    query = f"SELECT {TASK_COLUMNS} FROM tasks WHERE {' AND '.join(clauses)} ORDER BY id DESC"
+    if limit:
+        query += " LIMIT %s"
+        params.append(limit)
     return fetch_all(query, params)
+
+
+def get_task_by_search(keyword):
+    keyword = keyword.strip()
+    if not keyword:
+        return None
+    for field in ["task_number", "subscription_number", "task_type", "task_status"]:
+        rows = _search_by_field(field, keyword, limit=1)
+        if rows:
+            return rows[0]
+    return None
+
+
+def search_tasks(keyword="", technician="", task_type="", task_status=""):
+    keyword = keyword.strip()
+    if keyword:
+        for field in ["task_number", "subscription_number", "task_type", "task_status"]:
+            rows = _search_by_field(field, keyword, technician, task_type, task_status)
+            if rows:
+                return rows
+        return []
+
+    clauses, params = _task_filter_clause(technician, task_type, task_status)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks {where} ORDER BY id DESC", params)
 
 
 def create_materials_table():

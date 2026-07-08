@@ -13,7 +13,7 @@ with st.form("change_password_form"):
     current_password = st.text_input("كلمة المرور الحالية", type="password")
     new_password = st.text_input("كلمة المرور الجديدة", type="password")
     confirm_password = st.text_input("تأكيد كلمة المرور الجديدة", type="password")
-    submitted = st.form_submit_button("💾 حفظ", use_container_width=True)
+    submitted = st.form_submit_button("💾 حفظ", width="stretch")
 
 if submitted:
     current_password = current_password.strip()

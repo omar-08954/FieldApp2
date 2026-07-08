@@ -19,8 +19,7 @@ with st.form("task_form", clear_on_submit=True):
     with col2:
         subscription_number = st.text_input("رقم الاشتراك")
         task_status = st.selectbox("حالة المهمة", TASK_STATUSES)
-    notes = st.text_area("الملاحظات", height=110)
-    submitted = st.form_submit_button("💾 تسجيل المهمة", use_container_width=True)
+    submitted = st.form_submit_button("💾 تسجيل المهمة", width="stretch")
 
 if submitted:
     task_number = task_number.strip()
@@ -33,12 +32,10 @@ if submitted:
         with st.spinner("جاري تسجيل المهمة..."):
             add_task(
                 technician=st.session_state.fullname,
-                city=st.session_state.city,
                 task_number=task_number,
                 subscription_number=subscription_number,
                 task_type=task_type,
                 task_status=task_status,
-                notes=notes,
             )
             time.sleep(0.4)
         st.success("✅ تم تسجيل المهمة بنجاح")

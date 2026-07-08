@@ -73,7 +73,7 @@ def users_table(df):
     st.dataframe(
         display[visible_columns].rename(columns=columns),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -118,7 +118,7 @@ with tab_add:
             password = st.text_input("كلمة المرور", type="password")
             confirm_password = st.text_input("تأكيد كلمة المرور", type="password")
         role_label = st.selectbox("نوع المستخدم", ["مدير", "فني"])
-        add_submitted = st.form_submit_button("➕ إضافة المستخدم", use_container_width=True)
+        add_submitted = st.form_submit_button("➕ إضافة المستخدم", width="stretch")
 
     if add_submitted:
         fullname = fullname.strip()
@@ -162,7 +162,7 @@ with tab_edit:
                 ["مدير", "فني"],
                 index=["مدير", "فني"].index(role_current) if role_current in ["مدير", "فني"] else 0,
             )
-            save_submitted = st.form_submit_button("💾 حفظ التعديلات", use_container_width=True)
+            save_submitted = st.form_submit_button("💾 حفظ التعديلات", width="stretch")
 
         if save_submitted:
             if not fullname.strip():
@@ -196,7 +196,7 @@ with tab_delete:
         st.warning("تأكيد واضح: سيتم حذف هذا المستخدم نهائياً من قاعدة البيانات.")
         confirm_delete = st.checkbox("نعم، أؤكد حذف المستخدم", key="confirm_delete_user")
 
-        if st.button("🗑️ حذف المستخدم", use_container_width=True, disabled=not confirm_delete):
+        if st.button("🗑️ حذف المستخدم", width="stretch", disabled=not confirm_delete):
             if selected_user["username"] == st.session_state.username:
                 st.error("لا يمكن حذف المستخدم الذي قام بتسجيل الدخول حالياً.")
             elif selected_user["role"] == "admin" and admins_count <= 1:

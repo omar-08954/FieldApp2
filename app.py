@@ -27,7 +27,7 @@ def login_screen():
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم", placeholder="أدخل اسم المستخدم")
             password = st.text_input("كلمة المرور", type="password", placeholder="أدخل كلمة المرور")
-            submitted = st.form_submit_button("🔑 تسجيل الدخول", use_container_width=True)
+            submitted = st.form_submit_button("🔑 تسجيل الدخول", width="stretch")
         if submitted:
             username = username.strip()
             password = password.strip()
@@ -49,7 +49,7 @@ def login_screen():
 
 
 def nav_card(label, page_key):
-    if st.button(label, use_container_width=True):
+    if st.button(label, width="stretch"):
         st.switch_page(PAGES[page_key])
 
 
@@ -66,13 +66,12 @@ def home_screen():
             ("📊 التقارير", "reports"),
             ("📦 المستودع", "inventory"),
             ("👥 المستخدمون", "users"),
-            ("⚙️ الإعدادات", "settings"),
-            ("🔒 تغيير كلمة المرور", "settings"),
+            ("🔒 تغيير كلمة المرور", "change_password"),
         ]
     else:
         cards = [
             ("👷 صفحة الفني", "technician"),
-            ("🔒 تغيير كلمة المرور", "settings"),
+            ("🔒 تغيير كلمة المرور", "change_password"),
         ]
 
     for row_start in range(0, len(cards), 3):
@@ -82,7 +81,7 @@ def home_screen():
                 nav_card(label, page_key)
 
     st.divider()
-    if st.button("🚪 تسجيل الخروج", use_container_width=True):
+    if st.button("🚪 تسجيل الخروج", width="stretch"):
         logout()
 
 
