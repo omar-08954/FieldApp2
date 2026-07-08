@@ -102,15 +102,15 @@ def home_screen():
     if st.session_state.role == "admin":
         cards = [
             ("📊 لوحة التحكم", "dashboard"),
-            ("📋 لوحة المدير", "admin"),
-            ("👷 الفنيين", "technician"),
-            ("📊 التقارير", "reports"),
+            ("👔 لوحة المدير", "admin"),
+            ("🛠️ صفحة الفني", "technician"),
+            ("📑 صفحة التقارير", "reports"),
             ("📦 المستودع", "inventory"),
-            ("👥 المستخدمون", "users"),
-            ("🔒 تغيير كلمة المرور", "change_password"),
+            ("👥 إدارة المستخدمين", "users"),
+            ("🔑 تغيير كلمة المرور", "change_password"),
         ]
     else:
-        cards = [("👷 صفحة الفني", "technician"), ("🔒 تغيير كلمة المرور", "change_password")]
+        cards = [("🛠️ صفحة الفني", "technician"), ("🔑 تغيير كلمة المرور", "change_password")]
 
     for row_start in range(0, len(cards), 3):
         cols = st.columns(3)
@@ -167,7 +167,7 @@ def dashboard_page():
 def technician_page():
     require_login(["admin", "technician"])
     top_nav()
-    page_header("👷 صفحة الفني", "تسجيل المهام اليومية بسرعة وبدون تكرار رقم المهمة.")
+    page_header("🛠️ صفحة الفني", "تسجيل المهام اليومية بسرعة وبدون تكرار رقم المهمة.")
     with st.form("task_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
@@ -605,7 +605,7 @@ def inventory_page():
 def change_password_page():
     require_login(["admin", "technician"])
     top_nav()
-    page_header("🔒 تغيير كلمة المرور", f"المستخدم الحالي: {st.session_state.fullname}")
+    page_header("🔑 تغيير كلمة المرور", f"المستخدم الحالي: {st.session_state.fullname}")
     with st.form("change_password_form"):
         current_password = st.text_input("كلمة المرور الحالية", type="password")
         new_password = st.text_input("كلمة المرور الجديدة", type="password")
