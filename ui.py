@@ -1,8 +1,28 @@
 import streamlit as st
+from difflib import SequenceMatcher
 
 
 TASK_TYPES = ["تقني", "زيرا"]
 TASK_STATUSES = ["عائق", "تم الفحص", "مزال"]
+
+
+def fuzzy_series_mask(series, keyword, threshold=0.6):
+    """Approximate (typo-tolerant) fallback matching for client-side
+    text filters. Used only when an exact `.str.contains` filter finds
+    nothing, so exact-match behavior stays exactly as it was."""
+    keyword = str(keyword or "").strip().lower()
+    if not keyword:
+        return series.apply(lambda _: False)
+
+    def _match(value):
+        value = str(value or "").strip().lower()
+        if not value:
+            return False
+        if keyword in value or value in keyword:
+            return True
+        return SequenceMatcher(None, keyword, value).ratio() >= threshold
+
+    return series.apply(_match)
 
 
 def init_page(title="FieldApp", layout="wide"):
@@ -104,6 +124,15 @@ def inject_style():
             padding: .85rem 1rem;
             margin-bottom: 1rem;
             box-shadow: 0 10px 26px rgba(15, 23, 42, .06);
+        }
+        /* نص أسود وواضح داخل جميع مربعات الإدخال والبحث */
+        .stTextInput input,
+        .stTextArea textarea,
+        .stNumberInput input,
+        div[data-baseweb="select"] *,
+        div[data-baseweb="input"] input,
+        .stDateInput input {
+            color: #000000 !important;
         }
         </style>
         """,

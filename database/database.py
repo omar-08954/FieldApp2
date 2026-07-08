@@ -1,3 +1,5 @@
+from difflib import SequenceMatcher
+
 import streamlit as st
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -9,6 +11,115 @@ TASK_COLUMNS = (
     "city, notes, created_at, updated_at"
 )
 CITIES = ["جدة", "مكة"]
+
+
+TITLE_PREFIXES = ["المهندس", "مهندس", "م.", "الفني", "فني", "الأستاذ", "أ.", "السيد", "eng.", "eng", "mr."]
+
+
+def _normalize_person_name(name):
+    n = str(name or "").strip()
+    low = n.lower()
+    for prefix in TITLE_PREFIXES:
+        if low.startswith(prefix.lower()):
+            n = n[len(prefix):].strip()
+            low = n.lower()
+    return n
+
+
+def resolve_known_technician(raw_name, known_names, threshold=0.85):
+    """Fuzzy-match an imported technician name against the list of
+    technician names already known to the system, so near-identical
+    spellings ("هاني" / "هاني صلاح" / "م. هاني صلاح") resolve to the
+    same existing technician instead of creating a new distinct name.
+    If nothing matches well enough, the original name is returned as-is.
+    """
+    raw_name = str(raw_name or "").strip()
+    if not raw_name:
+        return raw_name
+    normalized_raw = _normalize_person_name(raw_name)
+    best_name, best_score = raw_name, 0.0
+    for known in known_names:
+        known = str(known or "").strip()
+        if not known:
+            continue
+        score = _fuzzy_ratio(normalized_raw, _normalize_person_name(known))
+        if score > best_score:
+            best_score = score
+            best_name = known
+    return best_name if best_score >= threshold else raw_name
+
+
+COLUMN_SYNONYMS = {
+    "الفني": ["الفني", "اسم الفني", "الموظف", "technician", "employee", "engineer"],
+    "رقم المهمة": ["رقم المهمة", "المهمة", "task number", "task", "رقم أمر العمل", "work order", "order number"],
+    "رقم الاشتراك": ["رقم الاشتراك", "الاشتراك", "subscription", "subscription number"],
+    "نوع المهمة": ["نوع المهمة", "النوع", "task type", "type"],
+    "حالة المهمة": ["حالة المهمة", "الحالة", "task status", "status"],
+    "المدينة": ["المدينة", "city"],
+    "الملاحظات": ["الملاحظات", "ملاحظات", "notes", "note"],
+}
+
+
+def resolve_column_mapping(columns, threshold=0.8):
+    """Map arbitrary Excel column headers to the canonical column names
+    already used across the app (e.g. "Task Number" / "المهمة" -> "رقم المهمة"),
+    based on meaning rather than exact spelling."""
+    mapping = {}
+    for column in columns:
+        column_norm = str(column).strip().lower()
+        best_target, best_score = None, 0.0
+        for target, synonyms in COLUMN_SYNONYMS.items():
+            for synonym in synonyms:
+                synonym_norm = synonym.strip().lower()
+                if column_norm == synonym_norm:
+                    best_target, best_score = target, 1.0
+                    break
+                score = _fuzzy_ratio(column_norm, synonym_norm)
+                if score > best_score:
+                    best_target, best_score = target, score
+            if best_score == 1.0:
+                break
+        if best_target and best_score >= threshold:
+            mapping[column] = best_target
+    return mapping
+
+
+def _invalidate_cache():
+    """Clear cached read results after any write so data stays correct
+    while still benefiting from caching on repeated reads."""
+    get_all_users.clear()
+    get_all_materials.clear()
+    get_all_tasks.clear()
+    search_tasks.clear()
+    _search_by_field.clear()
+
+
+def _fuzzy_ratio(a, b):
+    a = str(a or "").strip().lower()
+    b = str(b or "").strip().lower()
+    if not a or not b:
+        return 0.0
+    if a in b or b in a:
+        return 1.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _fuzzy_match_rows(rows, keyword, fields, threshold=0.6):
+    """Approximate (typo-tolerant) matching used only as a fallback when
+    an exact ILIKE search finds nothing, so exact-match behavior is
+    unchanged and this only adds extra results in the "no match" case."""
+    keyword = str(keyword or "").strip()
+    if not keyword:
+        return []
+    scored = []
+    for row in rows:
+        best = 0.0
+        for field in fields:
+            best = max(best, _fuzzy_ratio(keyword, row.get(field)))
+        if best >= threshold:
+            scored.append((best, row))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [row for _, row in scored]
 
 
 def get_connection():
@@ -137,12 +248,15 @@ def add_user(username, password, fullname, role, city=""):
         """,
         (username.strip(), password.strip(), fullname.strip(), role, (city or "").strip()),
     )
+    _invalidate_cache()
 
 
 def delete_user(user_id):
     execute("DELETE FROM users WHERE id = %s", (int(user_id),))
+    _invalidate_cache()
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def get_all_users():
     return fetch_all(
         """
@@ -158,6 +272,7 @@ def change_password(username, new_password):
         "UPDATE users SET password = %s WHERE username = %s",
         (new_password, username),
     )
+    _invalidate_cache()
 
 
 def update_user(user_id, fullname, password, role, city=None):
@@ -170,6 +285,7 @@ def update_user(user_id, fullname, password, role, city=None):
             """,
             (fullname.strip(), password.strip(), role, city, int(user_id)),
         )
+        _invalidate_cache()
         return
     if password:
         execute(
@@ -180,6 +296,7 @@ def update_user(user_id, fullname, password, role, city=None):
             """,
             (fullname.strip(), password.strip(), role, int(user_id)),
         )
+        _invalidate_cache()
         return
     if city is not None:
         execute(
@@ -190,6 +307,7 @@ def update_user(user_id, fullname, password, role, city=None):
             """,
             (fullname.strip(), role, city, int(user_id)),
         )
+        _invalidate_cache()
         return
     execute(
         """
@@ -199,6 +317,7 @@ def update_user(user_id, fullname, password, role, city=None):
         """,
         (fullname.strip(), role, int(user_id)),
     )
+    _invalidate_cache()
 
 
 def task_exists(task_number, exclude_id=None):
@@ -229,6 +348,7 @@ def add_task(technician, task_number, subscription_number, task_type, task_statu
             (notes or "").strip(),
         ),
     )
+    _invalidate_cache()
 
 
 def update_task(task_id, task_number, subscription_number, task_type, task_status, city=None, notes=None):
@@ -255,6 +375,7 @@ def update_task(task_id, task_number, subscription_number, task_type, task_statu
                 int(task_id),
             ),
         )
+        _invalidate_cache()
         return
     execute(
         """
@@ -274,12 +395,15 @@ def update_task(task_id, task_number, subscription_number, task_type, task_statu
             int(task_id),
         ),
     )
+    _invalidate_cache()
 
 
 def delete_task(task_id):
     execute("DELETE FROM tasks WHERE id = %s", (int(task_id),))
+    _invalidate_cache()
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def get_all_tasks():
     return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks ORDER BY id DESC")
 
@@ -302,6 +426,7 @@ def _task_filter_clause(technician="", task_type="", task_status="", city=""):
     return clauses, params
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def _search_by_field(field, keyword, technician="", task_type="", task_status="", city="", limit=None):
     clauses, params = _task_filter_clause(technician, task_type, task_status, city)
     clauses.append(f"{field} ILIKE %s")
@@ -313,12 +438,17 @@ def _search_by_field(field, keyword, technician="", task_type="", task_status=""
     return fetch_all(query, params)
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def search_tasks(keyword="", technician="", task_type="", task_status="", city=""):
     """Sequential smart search.
 
     When a keyword is supplied it is tried, in order, against:
     رقم المهمة -> رقم الاشتراك -> نوع المهمة -> حالة المهمة -> اسم الفني
-    The first field that returns a match wins.
+    The first field that returns an exact (ILIKE) match wins - this exact
+    behavior is unchanged. Only if none of those fields match anything at
+    all does an approximate/typo-tolerant fallback search run, so smart
+    (fuzzy) matches now show up instead of "no results" when the user's
+    spelling is slightly off.
     """
     keyword = keyword.strip()
     if keyword:
@@ -326,7 +456,16 @@ def search_tasks(keyword="", technician="", task_type="", task_status="", city="
             rows = _search_by_field(field, keyword, technician, task_type, task_status, city)
             if rows:
                 return rows
-        return []
+
+        # لا يوجد تطابق حرفي: جرّب بحثاً ذكياً (تقريبياً) بدل إظهار نتيجة فارغة
+        clauses, params = _task_filter_clause(technician, task_type, task_status, city)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        candidate_rows = fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks {where} ORDER BY id DESC", params)
+        return _fuzzy_match_rows(
+            candidate_rows,
+            keyword,
+            ["task_number", "subscription_number", "task_type", "task_status", "technician", "city"],
+        )
 
     clauses, params = _task_filter_clause(technician, task_type, task_status, city)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
@@ -357,8 +496,10 @@ def add_material(name, quantity, unit, notes):
         """,
         (name.strip(), int(quantity), unit, notes.strip()),
     )
+    _invalidate_cache()
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def get_all_materials():
     return fetch_all("SELECT * FROM materials ORDER BY name")
 
@@ -372,6 +513,7 @@ def update_material(material_id, name, unit, notes):
         """,
         (name.strip(), unit, notes.strip(), int(material_id)),
     )
+    _invalidate_cache()
 
 
 def increase_material(material_id, quantity):
@@ -383,6 +525,7 @@ def increase_material(material_id, quantity):
         """,
         (int(quantity), int(material_id)),
     )
+    _invalidate_cache()
 
 
 def decrease_material(material_id, quantity):
@@ -397,8 +540,10 @@ def decrease_material(material_id, quantity):
         """,
         (int(quantity), int(material_id)),
     )
+    _invalidate_cache()
     return True
 
 
 def delete_material(material_id):
     execute("DELETE FROM materials WHERE id = %s", (int(material_id),))
+    _invalidate_cache()

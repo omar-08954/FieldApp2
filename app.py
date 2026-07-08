@@ -20,13 +20,15 @@ from database.database import (
     increase_material,
     login_user,
     material_exists,
+    resolve_column_mapping,
+    resolve_known_technician,
     search_tasks,
     task_exists,
     update_material,
     update_task,
     update_user,
 )
-from ui import TASK_STATUSES, TASK_TYPES, init_page, logout, page_header, require_login, task_dataframe, top_nav
+from ui import TASK_STATUSES, TASK_TYPES, fuzzy_series_mask, init_page, logout, page_header, require_login, task_dataframe, top_nav
 
 
 ROLE_LABELS = {"admin": "مدير", "technician": "فني"}
@@ -58,7 +60,6 @@ def login_screen():
             """
             <div class="hero">
                 <h1>شركة الفكر الصاعد للمقاولات</h1>
-                <div class="muted">منصة متابعة المهام والفنيين والمستودع</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -395,22 +396,43 @@ def admin_page():
             uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx"])
             if uploaded:
                 incoming = pd.read_excel(uploaded)
+                # مطابقة أسماء الأعمدة تلقائياً حتى لو اختلفت عن الأسماء المتوقعة
+                column_map = resolve_column_mapping(incoming.columns)
+                if column_map:
+                    incoming = incoming.rename(columns=column_map)
                 columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in incoming.columns]
                 st.dataframe(incoming[columns].head(20), hide_index=True, width="stretch")
                 if st.button("بدء الاستيراد", width="stretch"):
                     added = duplicated = 0
                     with st.spinner("جاري استيراد البيانات..."):
+                        technicians_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city", "created_at"])
+                        if not technicians_df.empty:
+                            technicians_only = technicians_df[technicians_df["role"] == "technician"]
+                            technician_names = technicians_only["fullname"].tolist()
+                            technician_city_map = {
+                                row["fullname"]: (row.get("city") or "") for _, row in technicians_only.iterrows()
+                            }
+                        else:
+                            technician_names, technician_city_map = [], {}
+
                         for _, row in incoming.iterrows():
                             number = str(row.get("رقم المهمة", "")).strip()
                             if not number or task_exists(number):
                                 duplicated += 1
                                 continue
+                            raw_technician = str(row.get("الفني", "")).strip() or "غير محدد"
+                            # مطابقة تقريبية (Fuzzy) لاسم الفني مع الفنيين الموجودين بالفعل
+                            resolved_technician = resolve_known_technician(raw_technician, technician_names)
+                            # المدينة تُؤخذ من حساب الفني في قاعدة البيانات إذا تم التعرف عليه
+                            resolved_city = technician_city_map.get(resolved_technician) or str(row.get("المدينة", "")).strip()
                             add_task(
-                                str(row.get("الفني", "")).strip() or "غير محدد",
+                                resolved_technician,
                                 number,
                                 str(row.get("رقم الاشتراك", "")).strip(),
                                 str(row.get("نوع المهمة", "تقني")).strip(),
                                 str(row.get("حالة المهمة", "عائق")).strip(),
+                                city=resolved_city,
+                                notes=str(row.get("الملاحظات", "")).strip(),
                             )
                             added += 1
                     st.success(f"✅ تمت إضافة {added} مهمة، وتجاهل {duplicated} مهمة مكررة.")
@@ -488,10 +510,19 @@ def users_page():
         search = st.text_input("بحث بالاسم أو اسم المستخدم")
         filtered = users_df.copy()
         if search.strip() and not filtered.empty:
-            filtered = filtered[
+            exact_mask = (
                 filtered["fullname"].astype(str).str.contains(search, case=False, na=False)
                 | filtered["username"].astype(str).str.contains(search, case=False, na=False)
-            ]
+            )
+            if exact_mask.any():
+                filtered = filtered[exact_mask]
+            else:
+                # لا يوجد تطابق حرفي: جرّب بحثاً ذكياً (تقريبياً)
+                fuzzy_mask = (
+                    fuzzy_series_mask(filtered["fullname"].astype(str), search)
+                    | fuzzy_series_mask(filtered["username"].astype(str), search)
+                )
+                filtered = filtered[fuzzy_mask]
         users_table(filtered)
         st.caption(f"عدد المستخدمين: {len(filtered)}")
 
@@ -652,11 +683,21 @@ def inventory_page():
         search = st.text_input("بحث باسم المادة أو الوحدة أو الملاحظات")
         filtered = df.copy()
         if search:
-            filtered = filtered[
+            exact_mask = (
                 filtered["name"].astype(str).str.contains(search, case=False, na=False)
                 | filtered["unit"].astype(str).str.contains(search, case=False, na=False)
                 | filtered["notes"].astype(str).str.contains(search, case=False, na=False)
-            ]
+            )
+            if exact_mask.any():
+                filtered = filtered[exact_mask]
+            else:
+                # لا يوجد تطابق حرفي: جرّب بحثاً ذكياً (تقريبياً)
+                fuzzy_mask = (
+                    fuzzy_series_mask(filtered["name"].astype(str), search)
+                    | fuzzy_series_mask(filtered["unit"].astype(str), search)
+                    | fuzzy_series_mask(filtered["notes"].astype(str), search)
+                )
+                filtered = filtered[fuzzy_mask]
         display = filtered.rename(columns={"name": "اسم المادة", "quantity": "الكمية", "unit": "الوحدة", "notes": "الملاحظات", "created_at": "تاريخ الإضافة", "updated_at": "آخر تحديث"}).drop(columns=["id"], errors="ignore")
         st.dataframe(display, hide_index=True, width="stretch")
         st.caption(f"عدد النتائج: {len(filtered)}")
