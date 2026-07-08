@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from database.database import (
+    CITIES,
     add_material,
     add_task,
     add_user,
@@ -168,30 +169,117 @@ def technician_page():
     require_login(["admin", "technician"])
     top_nav()
     page_header("🛠️ صفحة الفني", "تسجيل المهام اليومية بسرعة وبدون تكرار رقم المهمة.")
-    with st.form("task_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            task_number = st.text_input("رقم المهمة")
-            task_type = st.selectbox("نوع المهمة", TASK_TYPES)
-        with col2:
-            subscription_number = st.text_input("رقم الاشتراك")
-            task_status = st.selectbox("حالة المهمة", TASK_STATUSES)
-        submitted = st.form_submit_button("💾 تسجيل المهمة", width="stretch")
 
-    if submitted:
-        task_number = task_number.strip()
-        subscription_number = subscription_number.strip()
-        if not task_number or not subscription_number:
-            st.warning("يرجى إدخال رقم المهمة ورقم الاشتراك.")
-            return
-        with st.spinner("جاري تسجيل المهمة..."):
-            exists = task_exists(task_number)
-            if not exists:
-                add_task(st.session_state.fullname, task_number, subscription_number, task_type, task_status)
-        if exists:
-            st.error("❌ لا يمكن إضافة نفس رقم المهمة مرتين.")
-        else:
-            st.success("✅ تم تسجيل المهمة بنجاح")
+    my_city = st.session_state.get("city") or ""
+
+    tab_add, tab_search = st.tabs(["➕ تسجيل مهمة", "🔍 بحث عن مهمة"])
+
+    with tab_add:
+        if my_city:
+            st.caption(f"المدينة المسجلة لحسابك: {my_city}")
+        with st.form("task_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                task_number = st.text_input("رقم المهمة")
+                task_type = st.selectbox("نوع المهمة", TASK_TYPES)
+            with col2:
+                subscription_number = st.text_input("رقم الاشتراك")
+                task_status = st.selectbox("حالة المهمة", TASK_STATUSES)
+            notes = st.text_area("ملاحظات (اختياري)", height=90)
+            submitted = st.form_submit_button("💾 تسجيل المهمة", width="stretch")
+
+        if submitted:
+            task_number = task_number.strip()
+            subscription_number = subscription_number.strip()
+            if not task_number or not subscription_number:
+                st.warning("يرجى إدخال رقم المهمة ورقم الاشتراك.")
+            else:
+                with st.spinner("💾 جاري حفظ المهمة..."):
+                    exists = task_exists(task_number)
+                    if not exists:
+                        add_task(
+                            st.session_state.fullname,
+                            task_number,
+                            subscription_number,
+                            task_type,
+                            task_status,
+                            city=my_city,
+                            notes=notes,
+                        )
+                if exists:
+                    st.error("❌ لا يمكن إضافة نفس رقم المهمة مرتين.")
+                else:
+                    st.success("✅ تم حفظ المهمة بنجاح.")
+
+    with tab_search:
+        st.caption("البحث يتم تلقائياً بالتسلسل: رقم المهمة ← رقم الاشتراك ← حالة المهمة ← اسم الفني.")
+        keyword = st.text_input("ابحث برقم المهمة / رقم الاشتراك / حالة المهمة / اسم الفني", key="tech_search_keyword")
+        if st.button("🔍 بحث", key="tech_search_btn", width="stretch"):
+            if not keyword.strip():
+                st.warning("يرجى إدخال قيمة للبحث.")
+            else:
+                with st.spinner("🔍 جاري البحث..."):
+                    results = search_tasks(keyword)
+                st.session_state["tech_search_results"] = results
+                if results:
+                    st.success("✅ تم العثور على المهمة.")
+                else:
+                    st.error("لم يتم العثور على مهمة مطابقة.")
+
+        results = st.session_state.get("tech_search_results", [])
+        if results:
+            df = as_df(results)
+            if len(df) > 1:
+                st.info("تم العثور على أكثر من سجل. اختر السجل المطلوب من القائمة.")
+                task_dataframe(df)
+                options = {
+                    f"{row['task_number']} - {row['subscription_number']} - {row['task_type']} - {row['task_status']}": row
+                    for _, row in df.iterrows()
+                }
+                selected_label = st.selectbox("اختر المهمة", list(options.keys()), key="tech_search_select")
+                task = options[selected_label]
+            else:
+                task = df.iloc[0].to_dict()
+
+            st.divider()
+            edit_col, delete_col = st.columns(2)
+            with edit_col:
+                st.subheader("✏️ تعديل المهمة")
+                with st.form("tech_edit_form"):
+                    new_number = st.text_input("رقم المهمة", value=task["task_number"])
+                    new_subscription = st.text_input("رقم الاشتراك", value=task["subscription_number"])
+                    new_type = st.selectbox(
+                        "نوع المهمة", TASK_TYPES,
+                        index=TASK_TYPES.index(task["task_type"]) if task["task_type"] in TASK_TYPES else 0,
+                    )
+                    new_status = st.selectbox(
+                        "حالة المهمة", TASK_STATUSES,
+                        index=TASK_STATUSES.index(task["task_status"]) if task["task_status"] in TASK_STATUSES else 0,
+                    )
+                    new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
+                    save = st.form_submit_button("✏️ حفظ التعديل", width="stretch")
+                if save:
+                    with st.spinner("✏️ جاري تحديث المهمة..."):
+                        duplicate = task_exists(new_number, exclude_id=task["id"])
+                        if not duplicate:
+                            update_task(task["id"], new_number, new_subscription, new_type, new_status, notes=new_notes)
+                    if duplicate:
+                        st.error("رقم المهمة مستخدم في مهمة أخرى.")
+                    else:
+                        st.success("✅ تم تحديث المهمة.")
+                        st.session_state.pop("tech_search_results", None)
+                        st.rerun()
+
+            with delete_col:
+                st.subheader("🗑️ حذف المهمة")
+                st.warning("هل أنت متأكد من حذف هذه المهمة؟")
+                confirm = st.checkbox("نعم، أؤكد الحذف", key="tech_delete_confirm")
+                if st.button("🗑️ حذف المهمة", disabled=not confirm, width="stretch", key="tech_delete_btn"):
+                    with st.spinner("🗑️ جاري حذف المهمة..."):
+                        delete_task(task["id"])
+                    st.success("✅ تم حذف المهمة.")
+                    st.session_state.pop("tech_search_results", None)
+                    st.rerun()
 
 
 def select_task_from_search(state_prefix, title):
@@ -265,12 +353,15 @@ def admin_page():
                     new_subscription = st.text_input("رقم الاشتراك", value=task["subscription_number"])
                     new_type = st.selectbox("نوع المهمة", TASK_TYPES, index=TASK_TYPES.index(task["task_type"]) if task["task_type"] in TASK_TYPES else 0)
                     new_status = st.selectbox("حالة المهمة", TASK_STATUSES, index=TASK_STATUSES.index(task["task_status"]) if task["task_status"] in TASK_STATUSES else 0)
+                    current_city = task.get("city") if task.get("city") in CITIES else (CITIES[0] if CITIES else None)
+                    new_city = st.selectbox("المدينة", CITIES, index=CITIES.index(current_city) if current_city in CITIES else 0)
+                    new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
                     save = st.form_submit_button("💾 حفظ التعديلات", width="stretch")
                 if save:
                     with st.spinner("جاري حفظ التعديلات..."):
                         duplicate = task_exists(new_number, exclude_id=task["id"])
                         if not duplicate:
-                            update_task(task["id"], new_number, new_subscription, new_type, new_status)
+                            update_task(task["id"], new_number, new_subscription, new_type, new_status, city=new_city, notes=new_notes)
                     if duplicate:
                         st.error("رقم المهمة مستخدم في مهمة أخرى.")
                     else:
@@ -339,24 +430,25 @@ def admin_page():
             )
 
 
-def reports_page():
-    require_login(["admin"])
-    top_nav()
-    page_header("📑 التقارير", "تقارير المهام حسب النوع والحالة مع إمكانية التصدير.")
+def _city_report_tab(city):
     with st.spinner("جاري إنشاء التقرير..."):
-        df = as_df(search_tasks())
+        df = as_df(search_tasks(city=city))
     if df.empty:
-        st.info("لا توجد بيانات.")
+        st.info("لا توجد بيانات لهذه المدينة.")
         return
 
     col1, col2 = st.columns(2)
     with col1:
-        task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES)
+        task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES, key=f"report_type_{city}")
     with col2:
-        task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES)
-    keyword = st.text_input("بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها")
+        task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES, key=f"report_status_{city}")
+    keyword = st.text_input(
+        "بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها أو اسم الفني",
+        key=f"report_keyword_{city}",
+    )
     with st.spinner("جاري إنشاء التقرير..."):
-        filtered = as_df(search_tasks(keyword, task_type=task_type, task_status=task_status))
+        # city يُمرر دائماً لضمان عدم اختلاط بيانات المدينتين
+        filtered = as_df(search_tasks(keyword, task_type=task_type, task_status=task_status, city=city))
 
     c1, c2, c3 = st.columns(3)
     c1.metric("إجمالي النتائج", len(filtered))
@@ -365,7 +457,22 @@ def reports_page():
     task_dataframe(filtered)
     with st.spinner("جاري تحميل التقارير..."):
         csv = filtered.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("📥 تحميل التقرير", csv, "tasks_report.csv", "text/csv", width="stretch")
+    st.download_button(
+        f"📥 تحميل تقرير {city}", csv, f"tasks_report_{city}.csv", "text/csv",
+        width="stretch", key=f"report_download_{city}",
+    )
+
+
+def reports_page():
+    require_login(["admin"])
+    top_nav()
+    page_header("📑 التقارير", "تقارير المهام حسب المدينة والنوع والحالة مع إمكانية التصدير.")
+
+    tab_jeddah, tab_makkah = st.tabs(["📍 تقارير جدة", "📍 تقارير مكة"])
+    with tab_jeddah:
+        _city_report_tab("جدة")
+    with tab_makkah:
+        _city_report_tab("مكة")
 
 
 def users_page():
@@ -398,6 +505,7 @@ def users_page():
                 password = st.text_input("كلمة المرور", type="password")
                 confirm_password = st.text_input("تأكيد كلمة المرور", type="password")
             role_label = st.selectbox("نوع المستخدم", ["مدير", "فني"])
+            city = st.selectbox("المدينة", CITIES)
             add_submitted = st.form_submit_button("➕ إضافة المستخدم", width="stretch")
         if add_submitted:
             if not fullname.strip() or not username.strip() or not password.strip() or not confirm_password.strip():
@@ -409,7 +517,7 @@ def users_page():
             else:
                 try:
                     with st.spinner("جاري إضافة المستخدم..."):
-                        add_user(username, password, fullname, ROLE_VALUES[role_label], "")
+                        add_user(username, password, fullname, ROLE_VALUES[role_label], city)
                     st.success("✅ تم إضافة المستخدم بنجاح")
                     st.rerun()
                 except Exception as exc:
@@ -427,13 +535,15 @@ def users_page():
                 password = st.text_input("كلمة المرور الجديدة (اتركها فارغة بدون تغيير)", type="password")
                 role_current = ROLE_LABELS.get(selected_user["role"], selected_user["role"])
                 role_label = st.selectbox("نوع المستخدم", ["مدير", "فني"], index=["مدير", "فني"].index(role_current) if role_current in ["مدير", "فني"] else 0)
+                current_city = selected_user.get("city") if selected_user.get("city") in CITIES else CITIES[0]
+                city = st.selectbox("المدينة", CITIES, index=CITIES.index(current_city))
                 save_submitted = st.form_submit_button("💾 حفظ التعديلات", width="stretch")
             if save_submitted:
                 if not fullname.strip():
                     st.warning("يرجى إدخال الاسم الكامل.")
                 else:
                     with st.spinner("جاري حفظ التعديلات..."):
-                        update_user(selected_user["id"], fullname, password, ROLE_VALUES[role_label])
+                        update_user(selected_user["id"], fullname, password, ROLE_VALUES[role_label], city=city)
                     st.success("✅ تم حفظ التعديلات بنجاح")
                     st.rerun()
 
@@ -476,11 +586,18 @@ def users_table(df):
     display = df.copy()
     display["نوع المستخدم"] = display["role"].map(ROLE_LABELS).fillna(display["role"])
     visible_columns = ["fullname", "username", "نوع المستخدم"]
+    if "city" in display.columns:
+        visible_columns.append("city")
     if "created_at" in display.columns:
         visible_columns.append("created_at")
     st.dataframe(
         display[visible_columns].rename(
-            columns={"fullname": "الاسم الكامل", "username": "اسم المستخدم", "created_at": "تاريخ الإنشاء"}
+            columns={
+                "fullname": "الاسم الكامل",
+                "username": "اسم المستخدم",
+                "city": "المدينة",
+                "created_at": "تاريخ الإنشاء",
+            }
         ),
         hide_index=True,
         width="stretch",

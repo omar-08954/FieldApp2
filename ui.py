@@ -112,8 +112,9 @@ def inject_style():
 
 
 def logout():
-    for key in ["logged_in", "fullname", "username", "role", "city"]:
-        st.session_state[key] = False if key == "logged_in" else ""
+    # مسح كامل للـ Session حتى لا يتبقى أي أثر من المستخدم السابق
+    st.session_state.clear()
+    init_session()
     st.session_state.current_page = "login"
     st.rerun()
 
@@ -168,6 +169,10 @@ def task_dataframe(df):
             "subscription_number": "رقم الاشتراك",
             "task_type": "نوع المهمة",
             "task_status": "حالة المهمة",
+            "city": "المدينة",
+            "notes": "ملاحظات",
+            "created_at": "تاريخ الإنشاء",
+            "updated_at": "آخر تحديث",
         }
     )
     st.dataframe(display, hide_index=True, width="stretch")
