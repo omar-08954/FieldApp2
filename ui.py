@@ -9,7 +9,7 @@ PAGES = {
     "home": "app.py",
     "dashboard": "pages/📊 لوحة التحكم.py",
     "admin": "pages/👔 لوحة المدير.py",
-    "technician": "pages/ 🛠️ صفحة الفني.py",
+    "technician": "pages/🛠️ صفحة الفني.py",
     "reports": "pages/📑صفحة التقارير.py",
     "inventory": "pages/📦 المستودع.py",
     "users": "pages/👥 إدارة المستخدمين.py",
