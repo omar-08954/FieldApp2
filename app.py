@@ -315,6 +315,35 @@ def select_task_from_search(state_prefix, title):
     return df.iloc[0].to_dict()
 
 
+def select_tasks_from_search_multi(state_prefix, title):
+    keyword = st.text_input(title, key=f"{state_prefix}_keyword")
+    if st.button("🔍 البحث", key=f"{state_prefix}_search_btn", width="stretch"):
+        if not keyword.strip():
+            st.warning("يرجى إدخال قيمة للبحث.")
+        else:
+            with st.spinner("جاري البحث عن المهمة..."):
+                st.session_state[f"{state_prefix}_results"] = search_tasks(keyword)
+                st.session_state.pop(f"{state_prefix}_selected_ids", None)
+            if st.session_state[f"{state_prefix}_results"]:
+                st.success("✅ تم العثور على المهمة")
+            else:
+                st.error("لم يتم العثور على مهمة مطابقة.")
+
+    results = st.session_state.get(f"{state_prefix}_results", [])
+    if not results:
+        return []
+
+    df = as_df(results)
+    st.info("يمكنك اختيار مهمة واحدة أو أكثر من القائمة.")
+    task_dataframe(df)
+    options = {
+        f"{row['task_number']} - {row['subscription_number']} - {row['task_type']} - {row['task_status']}": row
+        for _, row in df.iterrows()
+    }
+    selected_labels = st.multiselect("اختر المهام", list(options.keys()), key=f"{state_prefix}_multiselect")
+    return [options[label] for label in selected_labels]
+
+
 def admin_page():
     require_login(["admin"])
     top_nav()
@@ -372,16 +401,17 @@ def admin_page():
 
         with delete_col:
             st.subheader("🗑 حذف مهمة")
-            task = select_task_from_search("delete_task", "بحث ذكي للحذف")
-            if task:
-                task_dataframe(as_df([task]))
-                st.warning("هل أنت متأكد من حذف المهمة؟")
+            tasks = select_tasks_from_search_multi("delete_task", "بحث ذكي للحذف")
+            if tasks:
+                task_dataframe(as_df(tasks))
+                st.warning(f"هل أنت متأكد من حذف {len(tasks)} مهمة؟")
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("نعم، حذف", width="stretch"):
-                        with st.spinner("جاري حذف المهمة..."):
-                            delete_task(task["id"])
-                        st.success("✅ تم حذف المهمة بنجاح.")
+                    if st.button("نعم، حذف الكل", width="stretch"):
+                        with st.spinner("جاري حذف المهام..."):
+                            for task in tasks:
+                                delete_task(task["id"])
+                        st.success(f"✅ تم حذف {len(tasks)} مهمة بنجاح.")
                         st.session_state.pop("delete_task_results", None)
                         st.rerun()
                 with col2:
@@ -583,21 +613,38 @@ def users_page():
         if not options:
             st.info("لا يوجد مستخدمون للحذف.")
         else:
-            selected_label = st.selectbox("اختر المستخدم", list(options.keys()), key="delete_user_select")
-            selected_user = options[selected_label]
+            selected_labels = st.multiselect("اختر مستخدماً أو أكثر", list(options.keys()), key="delete_user_multiselect")
+            selected_users = [options[label] for label in selected_labels]
             admins_count = int((users_df["role"] == "admin").sum()) if not users_df.empty else 0
-            st.info(f"الاسم الكامل: {selected_user['fullname']}\n\nاسم المستخدم: {selected_user['username']}\n\nنوع المستخدم: {ROLE_LABELS.get(selected_user['role'], selected_user['role'])}")
-            st.warning("تأكيد واضح: سيتم حذف هذا المستخدم نهائياً من قاعدة البيانات.")
-            confirm_delete = st.checkbox("نعم، أؤكد حذف المستخدم", key="confirm_delete_user")
-            if st.button("🗑️ حذف المستخدم", width="stretch", disabled=not confirm_delete):
-                if selected_user["username"] == st.session_state.username:
-                    st.error("لا يمكن حذف المستخدم الذي قام بتسجيل الدخول حالياً.")
-                elif selected_user["role"] == "admin" and admins_count <= 1:
-                    st.error("لا يمكن حذف آخر مدير في النظام.")
-                else:
-                    with st.spinner("جاري حذف مستخدم..."):
-                        delete_user(selected_user["id"])
-                    st.success("✅ تم حذف المستخدم بنجاح")
+            if selected_users:
+                for selected_user in selected_users:
+                    st.info(f"الاسم الكامل: {selected_user['fullname']}\n\nاسم المستخدم: {selected_user['username']}\n\nنوع المستخدم: {ROLE_LABELS.get(selected_user['role'], selected_user['role'])}")
+                st.warning("تأكيد واضح: سيتم حذف جميع المستخدمين المحددين نهائياً من قاعدة البيانات.")
+                confirm_delete = st.checkbox("نعم، أؤكد حذف المستخدمين المحددين", key="confirm_delete_users_multi")
+                if st.button("🗑️ حذف المستخدمين المحددين", width="stretch", disabled=not confirm_delete):
+                    remaining_admins = admins_count
+                    deleted = blocked_self = blocked_last_admin = 0
+                    with st.spinner("جاري حذف المستخدمين..."):
+                        for selected_user in selected_users:
+                            if selected_user["username"] == st.session_state.username:
+                                blocked_self += 1
+                                continue
+                            if selected_user["role"] == "admin" and remaining_admins <= 1:
+                                blocked_last_admin += 1
+                                continue
+                            delete_user(selected_user["id"])
+                            if selected_user["role"] == "admin":
+                                remaining_admins -= 1
+                            deleted += 1
+                    message = f"تم حذف {deleted} مستخدم بنجاح."
+                    if blocked_self:
+                        message += " لا يمكن حذف المستخدم الذي قام بتسجيل الدخول حالياً."
+                    if blocked_last_admin:
+                        message += " لا يمكن حذف آخر مدير في النظام."
+                    if deleted:
+                        st.success(f"✅ {message}")
+                    else:
+                        st.error(message)
                     st.rerun()
 
 
@@ -750,14 +797,19 @@ def inventory_page():
                     st.error("الكمية المطلوبة أكبر من الكمية الموجودة.")
 
         st.divider()
-        st.subheader("🗑 حذف المادة")
-        st.warning("هل أنت متأكد من حذف المادة؟")
-        confirm = st.checkbox("نعم، أؤكد حذف المادة نهائياً")
-        if st.button("🗑 حذف المادة", disabled=not confirm, width="stretch"):
-            with st.spinner("جاري حذف مادة..."):
-                delete_material(material["id"])
-            st.success("✅ تم حذف المادة بنجاح.")
-            st.rerun()
+        st.subheader("🗑 حذف المادة (يمكن اختيار أكثر من مادة)")
+        delete_material_options = {row["name"]: row for _, row in df.sort_values("name").iterrows()}
+        selected_delete_names = st.multiselect("اختر مادة أو أكثر للحذف", list(delete_material_options.keys()), key="delete_materials_multiselect")
+        selected_delete_materials = [delete_material_options[name] for name in selected_delete_names]
+        if selected_delete_materials:
+            st.warning(f"هل أنت متأكد من حذف {len(selected_delete_materials)} مادة؟")
+            confirm = st.checkbox("نعم، أؤكد حذف المواد المحددة نهائياً", key="confirm_delete_materials_multi")
+            if st.button("🗑 حذف المواد المحددة", disabled=not confirm, width="stretch", key="delete_materials_multi_btn"):
+                with st.spinner("جاري حذف مادة..."):
+                    for mat in selected_delete_materials:
+                        delete_material(mat["id"])
+                st.success(f"✅ تم حذف {len(selected_delete_materials)} مادة بنجاح.")
+                st.rerun()
 
 
 def change_password_page():
