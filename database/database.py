@@ -1,4 +1,5 @@
 from difflib import SequenceMatcher
+import re
 
 import streamlit as st
 import psycopg2
@@ -12,26 +13,41 @@ TASK_COLUMNS = (
 )
 CITIES = ["جدة", "مكة"]
 
+# القيم الفعلية المعروفة لنوع وحالة المهمة (تُستخدم في التعرف على الأعمدة بالمحتوى)
+TASK_TYPE_VALUES = ["تقني", "زيرا"]
+TASK_STATUS_VALUES = ["عائق", "تم الفحص", "مزال"]
+
 
 TITLE_PREFIXES = ["المهندس", "مهندس", "م.", "الفني", "فني", "الأستاذ", "أ.", "السيد", "eng.", "eng", "mr."]
 
 
+def _clean_text(value):
+    value = str(value or "").strip().lower()
+    return re.sub(r"\s+", " ", value)
+
+
+def _text_tokens(value):
+    return [token for token in value.split(" ") if token]
+
+
 def _normalize_person_name(name):
-    n = str(name or "").strip()
-    low = n.lower()
+    n = _clean_text(name)
     for prefix in TITLE_PREFIXES:
-        if low.startswith(prefix.lower()):
-            n = n[len(prefix):].strip()
-            low = n.lower()
+        p = prefix.lower()
+        if n == p:
+            return ""
+        if n.startswith(p + " "):
+            n = n[len(p):].strip()
     return n
 
 
 def resolve_known_technician(raw_name, known_names, threshold=0.85):
     """Fuzzy-match an imported technician name against the list of
     technician names already known to the system, so near-identical
-    spellings ("هاني" / "هاني صلاح" / "م. هاني صلاح") resolve to the
-    same existing technician instead of creating a new distinct name.
-    If nothing matches well enough, the original name is returned as-is.
+    spellings ("هاني" / "هاني صلاح" / "م. هاني صلاح" / مسافات إضافية /
+    اختلاف بسيط في الكتابة) resolve to the same existing technician
+    instead of creating a new distinct name. If nothing matches well
+    enough, the original name is returned as-is.
     """
     raw_name = str(raw_name or "").strip()
     if not raw_name:
@@ -59,28 +75,67 @@ COLUMN_SYNONYMS = {
     "الملاحظات": ["الملاحظات", "ملاحظات", "notes", "note"],
 }
 
+# أعمدة يمكن التعرف عليها من خلال محتواها إذا فشلت المطابقة بالاسم
+CONTENT_BASED_COLUMNS = {
+    "نوع المهمة": TASK_TYPE_VALUES,
+    "حالة المهمة": TASK_STATUS_VALUES,
+}
 
-def resolve_column_mapping(columns, threshold=0.8):
+
+def _column_content_match_ratio(values, known_values):
+    cleaned = [_clean_text(v) for v in values]
+    cleaned = [v for v in cleaned if v]
+    if not cleaned:
+        return 0.0
+    matched = 0
+    for value in cleaned:
+        best = max(_fuzzy_ratio(value, known) for known in known_values)
+        if best >= 0.8:
+            matched += 1
+    return matched / len(cleaned)
+
+
+def resolve_column_mapping(columns, dataframe=None, threshold=0.8):
     """Map arbitrary Excel column headers to the canonical column names
     already used across the app (e.g. "Task Number" / "المهمة" -> "رقم المهمة"),
-    based on meaning rather than exact spelling."""
+    based on meaning rather than exact spelling. If a column's name isn't
+    recognized but its actual values match a known set (e.g. a column
+    named "الإفادة" containing only "تقني"/"زيرا"), it is still mapped
+    based on that content.
+    """
     mapping = {}
+    used_targets = set()
     for column in columns:
-        column_norm = str(column).strip().lower()
+        column_norm = _clean_text(column)
         best_target, best_score = None, 0.0
         for target, synonyms in COLUMN_SYNONYMS.items():
             for synonym in synonyms:
-                synonym_norm = synonym.strip().lower()
-                if column_norm == synonym_norm:
-                    best_target, best_score = target, 1.0
-                    break
-                score = _fuzzy_ratio(column_norm, synonym_norm)
+                synonym_norm = _clean_text(synonym)
+                score = 1.0 if column_norm == synonym_norm else _fuzzy_ratio(column_norm, synonym_norm)
                 if score > best_score:
                     best_target, best_score = target, score
             if best_score == 1.0:
                 break
         if best_target and best_score >= threshold:
             mapping[column] = best_target
+            used_targets.add(best_target)
+
+    if dataframe is not None:
+        for column in columns:
+            if column in mapping:
+                continue
+            try:
+                values = dataframe[column].tolist()
+            except Exception:
+                continue
+            for target, known_values in CONTENT_BASED_COLUMNS.items():
+                if target in used_targets:
+                    continue
+                if _column_content_match_ratio(values, known_values) >= 0.7:
+                    mapping[column] = target
+                    used_targets.add(target)
+                    break
+
     return mapping
 
 
@@ -95,12 +150,20 @@ def _invalidate_cache():
 
 
 def _fuzzy_ratio(a, b):
-    a = str(a or "").strip().lower()
-    b = str(b or "").strip().lower()
+    a = _clean_text(a)
+    b = _clean_text(b)
     if not a or not b:
         return 0.0
-    if a in b or b in a:
+    if a == b or a in b or b in a:
         return 1.0
+    a_tokens, b_tokens = _text_tokens(a), _text_tokens(b)
+    if a_tokens and b_tokens:
+        shorter, longer = (a_tokens, b_tokens) if len(a_tokens) <= len(b_tokens) else (b_tokens, a_tokens)
+        if all(
+            any(token == other or SequenceMatcher(None, token, other).ratio() >= 0.82 for other in longer)
+            for token in shorter
+        ):
+            return 0.95
     return SequenceMatcher(None, a, b).ratio()
 
 

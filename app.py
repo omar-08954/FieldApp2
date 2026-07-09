@@ -28,7 +28,7 @@ from database.database import (
     update_task,
     update_user,
 )
-from ui import TASK_STATUSES, TASK_TYPES, fuzzy_series_mask, init_page, logout, page_header, require_login, task_dataframe, top_nav
+from ui import TASK_STATUSES, TASK_TYPES, fuzzy_series_mask, init_page, logout, page_header, require_login, selectable_table, task_dataframe, top_nav
 
 
 ROLE_LABELS = {"admin": "مدير", "technician": "فني"}
@@ -315,35 +315,6 @@ def select_task_from_search(state_prefix, title):
     return df.iloc[0].to_dict()
 
 
-def select_tasks_from_search_multi(state_prefix, title):
-    keyword = st.text_input(title, key=f"{state_prefix}_keyword")
-    if st.button("🔍 البحث", key=f"{state_prefix}_search_btn", width="stretch"):
-        if not keyword.strip():
-            st.warning("يرجى إدخال قيمة للبحث.")
-        else:
-            with st.spinner("جاري البحث عن المهمة..."):
-                st.session_state[f"{state_prefix}_results"] = search_tasks(keyword)
-                st.session_state.pop(f"{state_prefix}_selected_ids", None)
-            if st.session_state[f"{state_prefix}_results"]:
-                st.success("✅ تم العثور على المهمة")
-            else:
-                st.error("لم يتم العثور على مهمة مطابقة.")
-
-    results = st.session_state.get(f"{state_prefix}_results", [])
-    if not results:
-        return []
-
-    df = as_df(results)
-    st.info("يمكنك اختيار مهمة واحدة أو أكثر من القائمة.")
-    task_dataframe(df)
-    options = {
-        f"{row['task_number']} - {row['subscription_number']} - {row['task_type']} - {row['task_status']}": row
-        for _, row in df.iterrows()
-    }
-    selected_labels = st.multiselect("اختر المهام", list(options.keys()), key=f"{state_prefix}_multiselect")
-    return [options[label] for label in selected_labels]
-
-
 def admin_page():
     require_login(["admin"])
     top_nav()
@@ -373,51 +344,53 @@ def admin_page():
         st.caption(f"عدد النتائج: {len(filtered)}")
 
     with tab_data:
-        edit_col, delete_col = st.columns(2)
-        with edit_col:
-            st.subheader("✏️ تعديل مهمة")
-            task = select_task_from_search("edit_task", "بحث ذكي للتعديل")
-            if task:
-                with st.form("edit_form"):
-                    new_number = st.text_input("رقم المهمة", value=task["task_number"])
-                    new_subscription = st.text_input("رقم الاشتراك", value=task["subscription_number"])
-                    new_type = st.selectbox("نوع المهمة", TASK_TYPES, index=TASK_TYPES.index(task["task_type"]) if task["task_type"] in TASK_TYPES else 0)
-                    new_status = st.selectbox("حالة المهمة", TASK_STATUSES, index=TASK_STATUSES.index(task["task_status"]) if task["task_status"] in TASK_STATUSES else 0)
-                    current_city = task.get("city") if task.get("city") in CITIES else (CITIES[0] if CITIES else None)
-                    new_city = st.selectbox("المدينة", CITIES, index=CITIES.index(current_city) if current_city in CITIES else 0)
-                    new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
-                    save = st.form_submit_button("💾 حفظ التعديلات", width="stretch")
-                if save:
-                    with st.spinner("جاري حفظ التعديلات..."):
-                        duplicate = task_exists(new_number, exclude_id=task["id"])
-                        if not duplicate:
-                            update_task(task["id"], new_number, new_subscription, new_type, new_status, city=new_city, notes=new_notes)
-                    if duplicate:
-                        st.error("رقم المهمة مستخدم في مهمة أخرى.")
-                    else:
-                        st.success("✅ تم حفظ التعديلات بنجاح.")
-                        st.session_state.pop("edit_task_results", None)
-                        st.rerun()
+        st.subheader("✏️ تعديل مهمة")
+        task = select_task_from_search("edit_task", "بحث ذكي للتعديل")
+        if task:
+            with st.form("edit_form"):
+                new_number = st.text_input("رقم المهمة", value=task["task_number"])
+                new_subscription = st.text_input("رقم الاشتراك", value=task["subscription_number"])
+                new_type = st.selectbox("نوع المهمة", TASK_TYPES, index=TASK_TYPES.index(task["task_type"]) if task["task_type"] in TASK_TYPES else 0)
+                new_status = st.selectbox("حالة المهمة", TASK_STATUSES, index=TASK_STATUSES.index(task["task_status"]) if task["task_status"] in TASK_STATUSES else 0)
+                current_city = task.get("city") if task.get("city") in CITIES else (CITIES[0] if CITIES else None)
+                new_city = st.selectbox("المدينة", CITIES, index=CITIES.index(current_city) if current_city in CITIES else 0)
+                new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
+                save = st.form_submit_button("💾 حفظ التعديلات", width="stretch")
+            if save:
+                with st.spinner("جاري حفظ التعديلات..."):
+                    duplicate = task_exists(new_number, exclude_id=task["id"])
+                    if not duplicate:
+                        update_task(task["id"], new_number, new_subscription, new_type, new_status, city=new_city, notes=new_notes)
+                if duplicate:
+                    st.error("رقم المهمة مستخدم في مهمة أخرى.")
+                else:
+                    st.success("✅ تم حفظ التعديلات بنجاح.")
+                    st.session_state.pop("edit_task_results", None)
+                    st.rerun()
 
-        with delete_col:
-            st.subheader("🗑 حذف مهمة")
-            tasks = select_tasks_from_search_multi("delete_task", "بحث ذكي للحذف")
-            if tasks:
-                task_dataframe(as_df(tasks))
-                st.warning(f"هل أنت متأكد من حذف {len(tasks)} مهمة؟")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("نعم، حذف الكل", width="stretch"):
-                        with st.spinner("جاري حذف المهام..."):
-                            for task in tasks:
-                                delete_task(task["id"])
-                        st.success(f"✅ تم حذف {len(tasks)} مهمة بنجاح.")
-                        st.session_state.pop("delete_task_results", None)
-                        st.rerun()
-                with col2:
-                    if st.button("إلغاء", width="stretch"):
-                        st.session_state.pop("delete_task_results", None)
-                        st.rerun()
+        st.divider()
+        st.subheader("🗑 حذف مهام")
+        with st.spinner("جاري تحديث البيانات..."):
+            delete_df = as_df(search_tasks(), ["id", "technician", "task_number", "subscription_number", "task_type", "task_status", "city"])
+        selected_ids = selectable_table(
+            delete_df,
+            "id",
+            {
+                "technician": "الفني",
+                "task_number": "رقم المهمة",
+                "subscription_number": "رقم الاشتراك",
+                "task_type": "نوع المهمة",
+                "task_status": "حالة المهمة",
+                "city": "المدينة",
+            },
+            key_prefix="delete_tasks",
+        )
+        if st.button("🗑 حذف المهام المحددة", width="stretch", disabled=not selected_ids):
+            with st.spinner("جاري حذف المهمة..."):
+                for task_id in selected_ids:
+                    delete_task(int(task_id))
+            st.success(f"✅ تم حذف {len(selected_ids)} مهمة بنجاح.")
+            st.rerun()
 
     with tab_transfer:
         col1, col2 = st.columns(2)
@@ -426,8 +399,8 @@ def admin_page():
             uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx"])
             if uploaded:
                 incoming = pd.read_excel(uploaded)
-                # مطابقة أسماء الأعمدة تلقائياً حتى لو اختلفت عن الأسماء المتوقعة
-                column_map = resolve_column_mapping(incoming.columns)
+                # مطابقة أسماء الأعمدة تلقائياً (بالاسم أو بمحتوى العمود) حتى لو اختلفت عن الأسماء المتوقعة
+                column_map = resolve_column_mapping(incoming.columns, incoming)
                 if column_map:
                     incoming = incoming.rename(columns=column_map)
                 columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in incoming.columns]
@@ -453,8 +426,12 @@ def admin_page():
                             raw_technician = str(row.get("الفني", "")).strip() or "غير محدد"
                             # مطابقة تقريبية (Fuzzy) لاسم الفني مع الفنيين الموجودين بالفعل
                             resolved_technician = resolve_known_technician(raw_technician, technician_names)
-                            # المدينة تُؤخذ من حساب الفني في قاعدة البيانات إذا تم التعرف عليه
-                            resolved_city = technician_city_map.get(resolved_technician) or str(row.get("المدينة", "")).strip()
+                            # إذا تم التعرف على الفني، تُستخدم مدينته من قاعدة البيانات دائماً
+                            # (حتى لو كانت فارغة) وليس من ملف Excel
+                            if resolved_technician in technician_city_map:
+                                resolved_city = technician_city_map[resolved_technician]
+                            else:
+                                resolved_city = str(row.get("المدينة", "")).strip()
                             add_task(
                                 resolved_technician,
                                 number,
@@ -609,42 +586,44 @@ def users_page():
                     st.rerun()
 
     with tab_delete:
-        options = user_options(users_df)
-        if not options:
+        if users_df.empty:
             st.info("لا يوجد مستخدمون للحذف.")
         else:
-            selected_labels = st.multiselect("اختر مستخدماً أو أكثر", list(options.keys()), key="delete_user_multiselect")
-            selected_users = [options[label] for label in selected_labels]
-            admins_count = int((users_df["role"] == "admin").sum()) if not users_df.empty else 0
-            if selected_users:
-                for selected_user in selected_users:
-                    st.info(f"الاسم الكامل: {selected_user['fullname']}\n\nاسم المستخدم: {selected_user['username']}\n\nنوع المستخدم: {ROLE_LABELS.get(selected_user['role'], selected_user['role'])}")
-                st.warning("تأكيد واضح: سيتم حذف جميع المستخدمين المحددين نهائياً من قاعدة البيانات.")
-                confirm_delete = st.checkbox("نعم، أؤكد حذف المستخدمين المحددين", key="confirm_delete_users_multi")
-                if st.button("🗑️ حذف المستخدمين المحددين", width="stretch", disabled=not confirm_delete):
-                    remaining_admins = admins_count
-                    deleted = blocked_self = blocked_last_admin = 0
-                    with st.spinner("جاري حذف المستخدمين..."):
-                        for selected_user in selected_users:
-                            if selected_user["username"] == st.session_state.username:
-                                blocked_self += 1
-                                continue
-                            if selected_user["role"] == "admin" and remaining_admins <= 1:
-                                blocked_last_admin += 1
-                                continue
-                            delete_user(selected_user["id"])
-                            if selected_user["role"] == "admin":
-                                remaining_admins -= 1
-                            deleted += 1
-                    message = f"تم حذف {deleted} مستخدم بنجاح."
-                    if blocked_self:
-                        message += " لا يمكن حذف المستخدم الذي قام بتسجيل الدخول حالياً."
-                    if blocked_last_admin:
-                        message += " لا يمكن حذف آخر مدير في النظام."
-                    if deleted:
-                        st.success(f"✅ {message}")
-                    else:
-                        st.error(message)
+            display_df = users_df.copy()
+            display_df["نوع المستخدم"] = display_df["role"].map(ROLE_LABELS).fillna(display_df["role"])
+            selected_ids = selectable_table(
+                display_df,
+                "id",
+                {
+                    "fullname": "الاسم الكامل",
+                    "username": "اسم المستخدم",
+                    "نوع المستخدم": "نوع المستخدم",
+                    "city": "المدينة",
+                },
+                key_prefix="delete_users",
+            )
+            if st.button("🗑️ حذف المستخدمين المحددين", width="stretch", disabled=not selected_ids):
+                admins_count = int((users_df["role"] == "admin").sum()) if not users_df.empty else 0
+                deleted = 0
+                blocked = []
+                with st.spinner("جاري حذف مستخدم..."):
+                    for user_id in selected_ids:
+                        row = users_df[users_df["id"].astype(int) == int(user_id)].iloc[0]
+                        if row["username"] == st.session_state.username:
+                            blocked.append(f"{row['fullname']} (لا يمكن حذف المستخدم الذي قام بتسجيل الدخول حالياً)")
+                            continue
+                        if row["role"] == "admin" and admins_count <= 1:
+                            blocked.append(f"{row['fullname']} (لا يمكن حذف آخر مدير في النظام)")
+                            continue
+                        delete_user(row["id"])
+                        deleted += 1
+                        if row["role"] == "admin":
+                            admins_count -= 1
+                if deleted:
+                    st.success(f"✅ تم حذف {deleted} مستخدم بنجاح")
+                for message in blocked:
+                    st.error(message)
+                if deleted:
                     st.rerun()
 
 
@@ -797,19 +776,26 @@ def inventory_page():
                     st.error("الكمية المطلوبة أكبر من الكمية الموجودة.")
 
         st.divider()
-        st.subheader("🗑 حذف المادة (يمكن اختيار أكثر من مادة)")
-        delete_material_options = {row["name"]: row for _, row in df.sort_values("name").iterrows()}
-        selected_delete_names = st.multiselect("اختر مادة أو أكثر للحذف", list(delete_material_options.keys()), key="delete_materials_multiselect")
-        selected_delete_materials = [delete_material_options[name] for name in selected_delete_names]
-        if selected_delete_materials:
-            st.warning(f"هل أنت متأكد من حذف {len(selected_delete_materials)} مادة؟")
-            confirm = st.checkbox("نعم، أؤكد حذف المواد المحددة نهائياً", key="confirm_delete_materials_multi")
-            if st.button("🗑 حذف المواد المحددة", disabled=not confirm, width="stretch", key="delete_materials_multi_btn"):
-                with st.spinner("جاري حذف مادة..."):
-                    for mat in selected_delete_materials:
-                        delete_material(mat["id"])
-                st.success(f"✅ تم حذف {len(selected_delete_materials)} مادة بنجاح.")
-                st.rerun()
+        st.subheader("🗑 حذف مواد")
+        with st.spinner("جاري تحديث البيانات..."):
+            delete_df = as_df(get_all_materials(), ["id", "name", "quantity", "unit", "notes"])
+        selected_ids = selectable_table(
+            delete_df,
+            "id",
+            {
+                "name": "اسم المادة",
+                "quantity": "الكمية",
+                "unit": "الوحدة",
+                "notes": "الملاحظات",
+            },
+            key_prefix="delete_materials",
+        )
+        if st.button("🗑 حذف المواد المحددة", width="stretch", disabled=not selected_ids):
+            with st.spinner("جاري حذف مادة..."):
+                for material_id in selected_ids:
+                    delete_material(int(material_id))
+            st.success(f"✅ تم حذف {len(selected_ids)} مادة بنجاح.")
+            st.rerun()
 
 
 def change_password_page():

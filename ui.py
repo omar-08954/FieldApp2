@@ -6,6 +6,34 @@ TASK_TYPES = ["تقني", "زيرا"]
 TASK_STATUSES = ["عائق", "تم الفحص", "مزال"]
 
 
+def selectable_table(df, id_column, display_columns, key_prefix):
+    """Render a full table with a checkbox per row plus a 'select all'
+    checkbox, and return the list of ids the user has checked. Used for
+    the multi-select delete tables (tasks / users / materials)."""
+    if df.empty:
+        st.info("لا توجد بيانات لعرضها.")
+        return []
+
+    select_all = st.checkbox("تحديد الكل", key=f"{key_prefix}_select_all")
+    table = df[[id_column] + list(display_columns.keys())].copy()
+    table.insert(0, "تحديد", select_all)
+    table = table.rename(columns=display_columns)
+
+    edited = st.data_editor(
+        table,
+        hide_index=True,
+        width="stretch",
+        key=f"{key_prefix}_editor",
+        column_config={
+            "تحديد": st.column_config.CheckboxColumn("تحديد"),
+            id_column: st.column_config.NumberColumn(disabled=True),
+        },
+        disabled=list(display_columns.values()),
+    )
+    selected_ids = edited.loc[edited["تحديد"] == True, id_column].tolist()
+    return selected_ids
+
+
 def fuzzy_series_mask(series, keyword, threshold=0.6):
     """Approximate (typo-tolerant) fallback matching for client-side
     text filters. Used only when an exact `.str.contains` filter finds
