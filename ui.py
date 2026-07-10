@@ -1,3 +1,6 @@
+import time
+from contextlib import contextmanager
+
 import streamlit as st
 from difflib import SequenceMatcher
 
@@ -6,17 +9,72 @@ TASK_TYPES = ["تقني", "زيرا"]
 TASK_STATUSES = ["عائق", "تم الفحص", "مزال"]
 
 
+@contextmanager
+def timed_spinner(message, min_seconds=1.0):
+    """Same as st.spinner(message), except: if the wrapped operation
+    finishes very quickly (< ~1 second) the spinner stays visible for
+    about a second so the user gets clear feedback that something
+    happened, instead of a flash. If the operation naturally takes
+    longer than that, it disappears immediately with no extra delay."""
+    with st.spinner(message):
+        start = time.time()
+        yield
+        elapsed = time.time() - start
+        if elapsed < min_seconds:
+            time.sleep(min_seconds - elapsed)
+
+
+def confirm_delete_button(key_prefix, selected_ids, button_label, confirm_noun):
+    """Two-step delete confirmation. Shows the delete button; once
+    pressed, shows a warning with the selected count plus Confirm/Cancel
+    buttons, and only returns True on the run where the user presses
+    Confirm (caller performs the actual deletion at that point)."""
+    pending_key = f"{key_prefix}_confirm_pending"
+    if st.button(button_label, width="stretch", disabled=not selected_ids, key=f"{key_prefix}_delete_btn"):
+        st.session_state[pending_key] = True
+
+    if st.session_state.get(pending_key) and selected_ids:
+        st.warning(f"سيتم حذف {len(selected_ids)} {confirm_noun}. هل أنت متأكد؟")
+        c1, c2 = st.columns(2)
+        with c1:
+            confirmed = st.button("✅ تأكيد الحذف", key=f"{key_prefix}_confirm_yes", width="stretch")
+        with c2:
+            cancelled = st.button("❌ إلغاء", key=f"{key_prefix}_confirm_no", width="stretch")
+        if cancelled:
+            st.session_state.pop(pending_key, None)
+            st.rerun()
+        if confirmed:
+            st.session_state.pop(pending_key, None)
+            return True
+    return False
+
+
 def selectable_table(df, id_column, display_columns, key_prefix):
-    """Render a full table with a checkbox per row plus a 'select all'
-    checkbox, and return the list of ids the user has checked. Used for
-    the multi-select delete tables (tasks / users / materials)."""
+    """Render a full table using st.data_editor with a 'تحديد' checkbox
+    column, plus two explicit buttons ('تحديد الكل' / 'إلغاء التحديد').
+    Returns the list of ids the user has checked. Used for the
+    multi-select delete tables (tasks / users / materials)."""
     if df.empty:
         st.info("لا توجد بيانات لعرضها.")
         return []
 
-    select_all = st.checkbox("تحديد الكل", key=f"{key_prefix}_select_all")
+    ids = df[id_column].tolist()
+    state_key = f"{key_prefix}_selection"
+    if state_key not in st.session_state or set(st.session_state[state_key].keys()) != set(ids):
+        st.session_state[state_key] = {row_id: False for row_id in ids}
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("☑ تحديد الكل", key=f"{key_prefix}_select_all_btn", width="stretch"):
+            st.session_state[state_key] = {row_id: True for row_id in ids}
+            st.rerun()
+    with col2:
+        if st.button("⬜ إلغاء التحديد", key=f"{key_prefix}_deselect_all_btn", width="stretch"):
+            st.session_state[state_key] = {row_id: False for row_id in ids}
+            st.rerun()
+
     table = df[[id_column] + list(display_columns.keys())].copy()
-    table.insert(0, "تحديد", select_all)
+    table.insert(0, "تحديد", table[id_column].map(st.session_state[state_key]))
     table = table.rename(columns=display_columns)
 
     edited = st.data_editor(
@@ -30,7 +88,12 @@ def selectable_table(df, id_column, display_columns, key_prefix):
         },
         disabled=list(display_columns.values()),
     )
-    selected_ids = edited.loc[edited["تحديد"] == True, id_column].tolist()
+
+    # مزامنة أي تحديد يدوي داخل الجدول مع حالة التحديد المحفوظة
+    for _, r in edited.iterrows():
+        st.session_state[state_key][r[id_column]] = bool(r["تحديد"])
+
+    selected_ids = [row_id for row_id, checked in st.session_state[state_key].items() if checked]
     return selected_ids
 
 

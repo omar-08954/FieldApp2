@@ -3,6 +3,7 @@ import re
 
 import streamlit as st
 import psycopg2
+import psycopg2.pool
 from psycopg2.extras import RealDictCursor
 
 
@@ -185,37 +186,84 @@ def _fuzzy_match_rows(rows, keyword, fields, threshold=0.6):
     return [row for _, row in scored]
 
 
+@st.cache_resource(show_spinner=False)
+def _connection_pool():
+    # اتصال مُعاد استخدامه بدل فتح اتصال TCP/TLS جديد بكل استعلام
+    # (ThreadedConnectionPool لأن Streamlit يخدم كل جلسة مستخدم في Thread خاص بها)
+    return psycopg2.pool.ThreadedConnectionPool(1, 10, dsn=DATABASE_URL, cursor_factory=RealDictCursor)
+
+
 def get_connection():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    return _connection_pool().getconn()
+
+
+def _release_connection(conn):
+    try:
+        _connection_pool().putconn(conn)
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _with_connection(action):
+    """Run `action(conn)` using a pooled connection. If the pooled
+    connection turned out to be stale (e.g. closed by the server after
+    being idle), the pool is reset and the action retried once with a
+    fresh connection, so pooling for speed doesn't introduce errors."""
+    attempts = 0
+    last_error = None
+    while attempts < 2:
+        conn = get_connection()
+        try:
+            result = action(conn)
+            _release_connection(conn)
+            return result
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+            last_error = exc
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _connection_pool.clear()
+            attempts += 1
+        except Exception:
+            _release_connection(conn)
+            raise
+    raise last_error
 
 
 def execute(query, params=()):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(query, params)
-    conn.commit()
-    cur.close()
-    conn.close()
+    def _action(conn):
+        cur = conn.cursor()
+        cur.execute(query, params)
+        conn.commit()
+        cur.close()
+
+    _with_connection(_action)
 
 
 def fetch_one(query, params=()):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(query, params)
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row
+    def _action(conn):
+        cur = conn.cursor()
+        cur.execute(query, params)
+        row = cur.fetchone()
+        cur.close()
+        return row
+
+    return _with_connection(_action)
 
 
 def fetch_all(query, params=()):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(query, params)
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return rows
+    def _action(conn):
+        cur = conn.cursor()
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+
+    return _with_connection(_action)
 
 
 def create_tables():
@@ -282,7 +330,7 @@ def create_tables():
 
     conn.commit()
     cur.close()
-    conn.close()
+    _release_connection(conn)
 
 
 def login_user(username, password):

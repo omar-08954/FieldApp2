@@ -28,7 +28,7 @@ from database.database import (
     update_task,
     update_user,
 )
-from ui import TASK_STATUSES, TASK_TYPES, fuzzy_series_mask, init_page, logout, page_header, require_login, selectable_table, task_dataframe, top_nav
+from ui import TASK_STATUSES, TASK_TYPES, confirm_delete_button, fuzzy_series_mask, init_page, logout, page_header, require_login, selectable_table, task_dataframe, timed_spinner, top_nav
 
 
 ROLE_LABELS = {"admin": "مدير", "technician": "فني"}
@@ -70,14 +70,14 @@ def login_screen():
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم", placeholder="أدخل اسم المستخدم")
             password = st.text_input("كلمة المرور", type="password", placeholder="أدخل كلمة المرور")
-            submitted = st.form_submit_button("🔑 تسجيل الدخول", width="stretch")
+            submitted = st.form_submit_button("🔑 تسجيل الدخول")
         if submitted:
             username = username.strip()
             password = password.strip()
             if not username or not password:
                 st.warning("يرجى إدخال اسم المستخدم وكلمة المرور.")
             else:
-                with st.spinner("جاري تسجيل الدخول..."):
+                with timed_spinner("جاري تسجيل الدخول..."):
                     user = login_user(username, password)
                 if user:
                     st.session_state.logged_in = True
@@ -129,7 +129,7 @@ def dashboard_page():
     require_login(["admin"])
     top_nav()
     page_header("📊 لوحة التحكم", "نظرة تنفيذية على المهام وأداء الفنيين.")
-    with st.spinner("جاري تحديث البيانات..."):
+    with timed_spinner("جاري تحديث البيانات..."):
         df = as_df(search_tasks())
     if df.empty:
         st.info("لا توجد مهام حتى الآن.")
@@ -157,7 +157,7 @@ def dashboard_page():
         task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES)
     keyword = st.text_input("بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها")
 
-    with st.spinner("جاري البحث عن المهمة..."):
+    with timed_spinner("جاري البحث عن المهمة..."):
         filtered = as_df(search_tasks(keyword, technician, task_type, task_status))
 
     st.subheader("📈 أداء الفنيين")
@@ -187,7 +187,7 @@ def technician_page():
                 subscription_number = st.text_input("رقم الاشتراك")
                 task_status = st.selectbox("حالة المهمة", TASK_STATUSES)
             notes = st.text_area("ملاحظات (اختياري)", height=90)
-            submitted = st.form_submit_button("💾 تسجيل المهمة", width="stretch")
+            submitted = st.form_submit_button("💾 تسجيل المهمة")
 
         if submitted:
             task_number = task_number.strip()
@@ -195,7 +195,7 @@ def technician_page():
             if not task_number or not subscription_number:
                 st.warning("يرجى إدخال رقم المهمة ورقم الاشتراك.")
             else:
-                with st.spinner("💾 جاري حفظ المهمة..."):
+                with timed_spinner("💾 جاري حفظ المهمة..."):
                     exists = task_exists(task_number)
                     if not exists:
                         add_task(
@@ -219,7 +219,7 @@ def technician_page():
             if not keyword.strip():
                 st.warning("يرجى إدخال قيمة للبحث.")
             else:
-                with st.spinner("🔍 جاري البحث..."):
+                with timed_spinner("🔍 جاري البحث..."):
                     results = search_tasks(keyword)
                 st.session_state["tech_search_results"] = results
                 if results:
@@ -258,9 +258,9 @@ def technician_page():
                         index=TASK_STATUSES.index(task["task_status"]) if task["task_status"] in TASK_STATUSES else 0,
                     )
                     new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
-                    save = st.form_submit_button("✏️ حفظ التعديل", width="stretch")
+                    save = st.form_submit_button("✏️ حفظ التعديل")
                 if save:
-                    with st.spinner("✏️ جاري تحديث المهمة..."):
+                    with timed_spinner("✏️ جاري تحديث المهمة..."):
                         duplicate = task_exists(new_number, exclude_id=task["id"])
                         if not duplicate:
                             update_task(task["id"], new_number, new_subscription, new_type, new_status, notes=new_notes)
@@ -276,7 +276,7 @@ def technician_page():
                 st.warning("هل أنت متأكد من حذف هذه المهمة؟")
                 confirm = st.checkbox("نعم، أؤكد الحذف", key="tech_delete_confirm")
                 if st.button("🗑️ حذف المهمة", disabled=not confirm, width="stretch", key="tech_delete_btn"):
-                    with st.spinner("🗑️ جاري حذف المهمة..."):
+                    with timed_spinner("🗑️ جاري حذف المهمة..."):
                         delete_task(task["id"])
                     st.success("✅ تم حذف المهمة.")
                     st.session_state.pop("tech_search_results", None)
@@ -289,7 +289,7 @@ def select_task_from_search(state_prefix, title):
         if not keyword.strip():
             st.warning("يرجى إدخال قيمة للبحث.")
         else:
-            with st.spinner("جاري البحث عن المهمة..."):
+            with timed_spinner("جاري البحث عن المهمة..."):
                 st.session_state[f"{state_prefix}_results"] = search_tasks(keyword)
                 st.session_state.pop(f"{state_prefix}_selected_id", None)
             if st.session_state[f"{state_prefix}_results"]:
@@ -319,7 +319,7 @@ def admin_page():
     require_login(["admin"])
     top_nav()
     page_header("📋 لوحة المدير", "إدارة المهام، البحث، الاستيراد، التعديل، والحذف.")
-    with st.spinner("جاري تحديث البيانات..."):
+    with timed_spinner("جاري تحديث البيانات..."):
         df = as_df(search_tasks(), ["id", "technician", "task_number", "subscription_number", "task_type", "task_status"])
 
     tab_manage, tab_data, tab_transfer = st.tabs(["📋 إدارة المهام", "✏️ إدارة البيانات", "📥 الاستيراد والتصدير"])
@@ -338,7 +338,7 @@ def admin_page():
             status = st.selectbox("الحالة", ["الكل"] + TASK_STATUSES)
         with col3:
             task_type = st.selectbox("النوع", ["الكل"] + TASK_TYPES)
-        with st.spinner("جاري البحث عن المهمة..."):
+        with timed_spinner("جاري البحث عن المهمة..."):
             filtered = as_df(search_tasks(keyword, task_type=task_type, task_status=status))
         task_dataframe(filtered)
         st.caption(f"عدد النتائج: {len(filtered)}")
@@ -355,9 +355,9 @@ def admin_page():
                 current_city = task.get("city") if task.get("city") in CITIES else (CITIES[0] if CITIES else None)
                 new_city = st.selectbox("المدينة", CITIES, index=CITIES.index(current_city) if current_city in CITIES else 0)
                 new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
-                save = st.form_submit_button("💾 حفظ التعديلات", width="stretch")
+                save = st.form_submit_button("💾 حفظ التعديلات")
             if save:
-                with st.spinner("جاري حفظ التعديلات..."):
+                with timed_spinner("جاري حفظ التعديلات..."):
                     duplicate = task_exists(new_number, exclude_id=task["id"])
                     if not duplicate:
                         update_task(task["id"], new_number, new_subscription, new_type, new_status, city=new_city, notes=new_notes)
@@ -370,7 +370,7 @@ def admin_page():
 
         st.divider()
         st.subheader("🗑 حذف مهام")
-        with st.spinner("جاري تحديث البيانات..."):
+        with timed_spinner("جاري تحديث البيانات..."):
             delete_df = as_df(search_tasks(), ["id", "technician", "task_number", "subscription_number", "task_type", "task_status", "city"])
         selected_ids = selectable_table(
             delete_df,
@@ -385,8 +385,8 @@ def admin_page():
             },
             key_prefix="delete_tasks",
         )
-        if st.button("🗑 حذف المهام المحددة", width="stretch", disabled=not selected_ids):
-            with st.spinner("جاري حذف المهمة..."):
+        if confirm_delete_button("delete_tasks", selected_ids, "🗑 حذف المهام المحددة", "مهمة محددة"):
+            with timed_spinner("جاري حذف المهمة..."):
                 for task_id in selected_ids:
                     delete_task(int(task_id))
             st.success(f"✅ تم حذف {len(selected_ids)} مهمة بنجاح.")
@@ -407,7 +407,9 @@ def admin_page():
                 st.dataframe(incoming[columns].head(20), hide_index=True, width="stretch")
                 if st.button("بدء الاستيراد", width="stretch"):
                     added = duplicated = 0
-                    with st.spinner("جاري استيراد البيانات..."):
+                    with timed_spinner("جاري استيراد البيانات..."):
+                        # استخدام البيانات المجلوبة بالفعل بدل تكرار الاستعلام عن كل رقم مهمة
+                        existing_numbers = set(df["task_number"].astype(str)) if not df.empty else set()
                         technicians_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city", "created_at"])
                         if not technicians_df.empty:
                             technicians_only = technicians_df[technicians_df["role"] == "technician"]
@@ -420,7 +422,7 @@ def admin_page():
 
                         for _, row in incoming.iterrows():
                             number = str(row.get("رقم المهمة", "")).strip()
-                            if not number or task_exists(number):
+                            if not number or number in existing_numbers:
                                 duplicated += 1
                                 continue
                             raw_technician = str(row.get("الفني", "")).strip() or "غير محدد"
@@ -441,12 +443,13 @@ def admin_page():
                                 city=resolved_city,
                                 notes=str(row.get("الملاحظات", "")).strip(),
                             )
+                            existing_numbers.add(number)
                             added += 1
                     st.success(f"✅ تمت إضافة {added} مهمة، وتجاهل {duplicated} مهمة مكررة.")
                     st.rerun()
         with col2:
             st.subheader("📤 تصدير Excel")
-            with st.spinner("جاري تصدير البيانات..."):
+            with timed_spinner("جاري تصدير البيانات..."):
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
                     df.drop(columns=["id"], errors="ignore").to_excel(writer, index=False)
@@ -460,7 +463,7 @@ def admin_page():
 
 
 def _city_report_tab(city):
-    with st.spinner("جاري إنشاء التقرير..."):
+    with timed_spinner("جاري إنشاء التقرير..."):
         df = as_df(search_tasks(city=city))
     if df.empty:
         st.info("لا توجد بيانات لهذه المدينة.")
@@ -475,7 +478,7 @@ def _city_report_tab(city):
         "بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها أو اسم الفني",
         key=f"report_keyword_{city}",
     )
-    with st.spinner("جاري إنشاء التقرير..."):
+    with timed_spinner("جاري إنشاء التقرير..."):
         # city يُمرر دائماً لضمان عدم اختلاط بيانات المدينتين
         filtered = as_df(search_tasks(keyword, task_type=task_type, task_status=task_status, city=city))
 
@@ -484,7 +487,7 @@ def _city_report_tab(city):
     c2.metric("مهام تقني", int((filtered["task_type"] == "تقني").sum()) if not filtered.empty else 0)
     c3.metric("مهام زيرا", int((filtered["task_type"] == "زيرا").sum()) if not filtered.empty else 0)
     task_dataframe(filtered)
-    with st.spinner("جاري تحميل التقارير..."):
+    with timed_spinner("جاري تحميل التقارير..."):
         csv = filtered.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
         f"📥 تحميل تقرير {city}", csv, f"tasks_report_{city}.csv", "text/csv",
@@ -509,7 +512,7 @@ def users_page():
     top_nav()
     page_header("👥 إدارة المستخدمين", "إدارة المستخدمين والصلاحيات من مكان واحد.")
 
-    with st.spinner("جاري تحديث البيانات..."):
+    with timed_spinner("جاري تحديث البيانات..."):
         users_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city", "created_at"])
     tab_view, tab_add, tab_edit, tab_delete = st.tabs(["👥 عرض المستخدمين", "➕ إضافة مستخدم", "✏️ تعديل مستخدم", "🗑️ حذف مستخدم"])
 
@@ -544,7 +547,7 @@ def users_page():
                 confirm_password = st.text_input("تأكيد كلمة المرور", type="password")
             role_label = st.selectbox("نوع المستخدم", ["مدير", "فني"])
             city = st.selectbox("المدينة", CITIES)
-            add_submitted = st.form_submit_button("➕ إضافة المستخدم", width="stretch")
+            add_submitted = st.form_submit_button("➕ إضافة المستخدم")
         if add_submitted:
             if not fullname.strip() or not username.strip() or not password.strip() or not confirm_password.strip():
                 st.warning("يرجى تعبئة جميع الحقول.")
@@ -554,7 +557,7 @@ def users_page():
                 st.error("اسم المستخدم مستخدم بالفعل")
             else:
                 try:
-                    with st.spinner("جاري إضافة المستخدم..."):
+                    with timed_spinner("جاري إضافة المستخدم..."):
                         add_user(username, password, fullname, ROLE_VALUES[role_label], city)
                     st.success("✅ تم إضافة المستخدم بنجاح")
                     st.rerun()
@@ -575,12 +578,12 @@ def users_page():
                 role_label = st.selectbox("نوع المستخدم", ["مدير", "فني"], index=["مدير", "فني"].index(role_current) if role_current in ["مدير", "فني"] else 0)
                 current_city = selected_user.get("city") if selected_user.get("city") in CITIES else CITIES[0]
                 city = st.selectbox("المدينة", CITIES, index=CITIES.index(current_city))
-                save_submitted = st.form_submit_button("💾 حفظ التعديلات", width="stretch")
+                save_submitted = st.form_submit_button("💾 حفظ التعديلات")
             if save_submitted:
                 if not fullname.strip():
                     st.warning("يرجى إدخال الاسم الكامل.")
                 else:
-                    with st.spinner("جاري حفظ التعديلات..."):
+                    with timed_spinner("جاري حفظ التعديلات..."):
                         update_user(selected_user["id"], fullname, password, ROLE_VALUES[role_label], city=city)
                     st.success("✅ تم حفظ التعديلات بنجاح")
                     st.rerun()
@@ -602,11 +605,11 @@ def users_page():
                 },
                 key_prefix="delete_users",
             )
-            if st.button("🗑️ حذف المستخدمين المحددين", width="stretch", disabled=not selected_ids):
+            if confirm_delete_button("delete_users", selected_ids, "🗑️ حذف المستخدمين المحددين", "مستخدم محدد"):
                 admins_count = int((users_df["role"] == "admin").sum()) if not users_df.empty else 0
                 deleted = 0
                 blocked = []
-                with st.spinner("جاري حذف مستخدم..."):
+                with timed_spinner("جاري حذف مستخدم..."):
                     for user_id in selected_ids:
                         row = users_df[users_df["id"].astype(int) == int(user_id)].iloc[0]
                         if row["username"] == st.session_state.username:
@@ -671,7 +674,7 @@ def inventory_page():
     require_login(["admin"])
     top_nav()
     page_header("📦 المستودع", "إدارة المواد والكميات والتنبيهات المخزنية.")
-    with st.spinner("جاري تحديث البيانات..."):
+    with timed_spinner("جاري تحديث البيانات..."):
         df = as_df(get_all_materials(), ["id", "name", "quantity", "unit", "notes"])
 
     total_materials = len(df)
@@ -690,12 +693,12 @@ def inventory_page():
             with col2:
                 unit = st.selectbox("الوحدة", UNITS)
                 notes = st.text_area("الملاحظات", height=100)
-            submitted = st.form_submit_button("➕ إضافة المادة", width="stretch")
+            submitted = st.form_submit_button("➕ إضافة المادة")
         if submitted:
             if not name.strip():
                 st.warning("يرجى إدخال اسم المادة.")
             else:
-                with st.spinner("جاري إضافة مادة للمستودع..."):
+                with timed_spinner("جاري إضافة مادة للمستودع..."):
                     exists = material_exists(name)
                     if not exists:
                         add_material(name, quantity, unit, notes)
@@ -746,7 +749,7 @@ def inventory_page():
             edit_unit = st.selectbox("الوحدة", UNITS, index=UNITS.index(current_unit))
             edit_notes = st.text_area("الملاحظات", value=material["notes"] or "", height=120)
             if st.button("💾 حفظ التعديلات", width="stretch"):
-                with st.spinner("جاري تعديل مادة..."):
+                with timed_spinner("جاري تعديل مادة..."):
                     exists = material_exists(edit_name, exclude_id=material["id"])
                     if not exists:
                         update_material(material["id"], edit_name, edit_unit, edit_notes)
@@ -760,14 +763,14 @@ def inventory_page():
             st.subheader("📦 إدارة الكمية")
             increase_qty = st.number_input("إضافة كمية", min_value=1, step=1, key="increase_qty")
             if st.button("➕ إضافة للمخزون", width="stretch"):
-                with st.spinner("جاري إضافة مادة للمستودع..."):
+                with timed_spinner("جاري إضافة مادة للمستودع..."):
                     increase_material(material["id"], increase_qty)
                 st.success("✅ تمت إضافة الكمية بنجاح.")
                 st.rerun()
 
             decrease_qty = st.number_input("خصم كمية", min_value=1, step=1, key="decrease_qty")
             if st.button("➖ خصم من المخزون", width="stretch"):
-                with st.spinner("جاري تحديث البيانات..."):
+                with timed_spinner("جاري تحديث البيانات..."):
                     success = decrease_material(material["id"], decrease_qty)
                 if success:
                     st.success("✅ تم خصم الكمية بنجاح.")
@@ -777,7 +780,7 @@ def inventory_page():
 
         st.divider()
         st.subheader("🗑 حذف مواد")
-        with st.spinner("جاري تحديث البيانات..."):
+        with timed_spinner("جاري تحديث البيانات..."):
             delete_df = as_df(get_all_materials(), ["id", "name", "quantity", "unit", "notes"])
         selected_ids = selectable_table(
             delete_df,
@@ -790,8 +793,8 @@ def inventory_page():
             },
             key_prefix="delete_materials",
         )
-        if st.button("🗑 حذف المواد المحددة", width="stretch", disabled=not selected_ids):
-            with st.spinner("جاري حذف مادة..."):
+        if confirm_delete_button("delete_materials", selected_ids, "🗑 حذف المواد المحددة", "مادة محددة"):
+            with timed_spinner("جاري حذف مادة..."):
                 for material_id in selected_ids:
                     delete_material(int(material_id))
             st.success(f"✅ تم حذف {len(selected_ids)} مادة بنجاح.")
@@ -806,7 +809,7 @@ def change_password_page():
         current_password = st.text_input("كلمة المرور الحالية", type="password")
         new_password = st.text_input("كلمة المرور الجديدة", type="password")
         confirm_password = st.text_input("تأكيد كلمة المرور الجديدة", type="password")
-        submitted = st.form_submit_button("💾 حفظ", width="stretch")
+        submitted = st.form_submit_button("💾 حفظ")
 
     if submitted:
         if not current_password.strip() or not new_password.strip() or not confirm_password.strip():
@@ -816,7 +819,7 @@ def change_password_page():
         elif len(new_password.strip()) < 4:
             st.error("يجب أن تكون كلمة المرور 4 أحرف على الأقل.")
         else:
-            with st.spinner("جاري حفظ التعديلات..."):
+            with timed_spinner("جاري حفظ التعديلات..."):
                 valid = check_current_password(st.session_state.username, current_password.strip())
                 if valid:
                     change_password(st.session_state.username, new_password.strip())
