@@ -94,7 +94,7 @@ def login_screen():
 
 
 def nav_card(label, page_key):
-    if st.button(label, width="stretch"):
+    if st.button(label, use_container_width=True):
         go_to(page_key)
 
 
@@ -121,7 +121,7 @@ def home_screen():
                 nav_card(label, page_key)
 
     st.divider()
-    if st.button("🚪 تسجيل الخروج", width="stretch"):
+    if st.button("🚪 تسجيل الخروج", use_container_width=True):
         logout()
 
 
@@ -215,7 +215,7 @@ def technician_page():
     with tab_search:
         st.caption("البحث يتم تلقائياً بالتسلسل: رقم المهمة ← رقم الاشتراك ← حالة المهمة ← اسم الفني.")
         keyword = st.text_input("ابحث برقم المهمة / رقم الاشتراك / حالة المهمة / اسم الفني", key="tech_search_keyword")
-        if st.button("🔍 بحث", key="tech_search_btn", width="stretch"):
+        if st.button("🔍 بحث", key="tech_search_btn", use_container_width=True):
             if not keyword.strip():
                 st.warning("يرجى إدخال قيمة للبحث.")
             else:
@@ -275,7 +275,7 @@ def technician_page():
                 st.subheader("🗑️ حذف المهمة")
                 st.warning("هل أنت متأكد من حذف هذه المهمة؟")
                 confirm = st.checkbox("نعم، أؤكد الحذف", key="tech_delete_confirm")
-                if st.button("🗑️ حذف المهمة", disabled=not confirm, width="stretch", key="tech_delete_btn"):
+                if st.button("🗑️ حذف المهمة", disabled=not confirm, use_container_width=True, key="tech_delete_btn"):
                     with timed_spinner("🗑️ جاري حذف المهمة..."):
                         delete_task(task["id"])
                     st.success("✅ تم حذف المهمة.")
@@ -285,7 +285,7 @@ def technician_page():
 
 def select_task_from_search(state_prefix, title):
     keyword = st.text_input(title, key=f"{state_prefix}_keyword")
-    if st.button("🔍 البحث", key=f"{state_prefix}_search_btn", width="stretch"):
+    if st.button("🔍 البحث", key=f"{state_prefix}_search_btn", use_container_width=True):
         if not keyword.strip():
             st.warning("يرجى إدخال قيمة للبحث.")
         else:
@@ -404,8 +404,8 @@ def admin_page():
                 if column_map:
                     incoming = incoming.rename(columns=column_map)
                 columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in incoming.columns]
-                st.dataframe(incoming[columns].head(20), hide_index=True, width="stretch")
-                if st.button("بدء الاستيراد", width="stretch"):
+                st.dataframe(incoming[columns].head(20), hide_index=True, use_container_width=True)
+                if st.button("بدء الاستيراد", use_container_width=True):
                     added = duplicated = 0
                     with timed_spinner("جاري استيراد البيانات..."):
                         # استخدام البيانات المجلوبة بالفعل بدل تكرار الاستعلام عن كل رقم مهمة
@@ -458,7 +458,7 @@ def admin_page():
                 data=output.getvalue(),
                 file_name="tasks.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch",
+                use_container_width=True,
             )
 
 
@@ -491,7 +491,7 @@ def _city_report_tab(city):
         csv = filtered.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
         f"📥 تحميل تقرير {city}", csv, f"tasks_report_{city}.csv", "text/csv",
-        width="stretch", key=f"report_download_{city}",
+        use_container_width=True, key=f"report_download_{city}",
     )
 
 
@@ -660,7 +660,7 @@ def users_table(df):
             }
         ),
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
     )
 
 
@@ -728,7 +728,7 @@ def inventory_page():
                 )
                 filtered = filtered[fuzzy_mask]
         display = filtered.rename(columns={"name": "اسم المادة", "quantity": "الكمية", "unit": "الوحدة", "notes": "الملاحظات", "created_at": "تاريخ الإضافة", "updated_at": "آخر تحديث"}).drop(columns=["id"], errors="ignore")
-        st.dataframe(display, hide_index=True, width="stretch")
+        st.dataframe(display, hide_index=True, use_container_width=True)
         st.caption(f"عدد النتائج: {len(filtered)}")
 
     with tab_manage:
@@ -748,7 +748,7 @@ def inventory_page():
             current_unit = material["unit"] if material["unit"] in UNITS else "أخرى"
             edit_unit = st.selectbox("الوحدة", UNITS, index=UNITS.index(current_unit))
             edit_notes = st.text_area("الملاحظات", value=material["notes"] or "", height=120)
-            if st.button("💾 حفظ التعديلات", width="stretch"):
+            if st.button("💾 حفظ التعديلات", use_container_width=True):
                 with timed_spinner("جاري تعديل مادة..."):
                     exists = material_exists(edit_name, exclude_id=material["id"])
                     if not exists:
@@ -762,14 +762,14 @@ def inventory_page():
         with col2:
             st.subheader("📦 إدارة الكمية")
             increase_qty = st.number_input("إضافة كمية", min_value=1, step=1, key="increase_qty")
-            if st.button("➕ إضافة للمخزون", width="stretch"):
+            if st.button("➕ إضافة للمخزون", use_container_width=True):
                 with timed_spinner("جاري إضافة مادة للمستودع..."):
                     increase_material(material["id"], increase_qty)
                 st.success("✅ تمت إضافة الكمية بنجاح.")
                 st.rerun()
 
             decrease_qty = st.number_input("خصم كمية", min_value=1, step=1, key="decrease_qty")
-            if st.button("➖ خصم من المخزون", width="stretch"):
+            if st.button("➖ خصم من المخزون", use_container_width=True):
                 with timed_spinner("جاري تحديث البيانات..."):
                     success = decrease_material(material["id"], decrease_qty)
                 if success:

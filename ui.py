@@ -30,16 +30,16 @@ def confirm_delete_button(key_prefix, selected_ids, button_label, confirm_noun):
     buttons, and only returns True on the run where the user presses
     Confirm (caller performs the actual deletion at that point)."""
     pending_key = f"{key_prefix}_confirm_pending"
-    if st.button(button_label, width="stretch", disabled=not selected_ids, key=f"{key_prefix}_delete_btn"):
+    if st.button(button_label, use_container_width=True, disabled=not selected_ids, key=f"{key_prefix}_delete_btn"):
         st.session_state[pending_key] = True
 
     if st.session_state.get(pending_key) and selected_ids:
         st.warning(f"سيتم حذف {len(selected_ids)} {confirm_noun}. هل أنت متأكد؟")
         c1, c2 = st.columns(2)
         with c1:
-            confirmed = st.button("✅ تأكيد الحذف", key=f"{key_prefix}_confirm_yes", width="stretch")
+            confirmed = st.button("✅ تأكيد الحذف", key=f"{key_prefix}_confirm_yes", use_container_width=True)
         with c2:
-            cancelled = st.button("❌ إلغاء", key=f"{key_prefix}_confirm_no", width="stretch")
+            cancelled = st.button("❌ إلغاء", key=f"{key_prefix}_confirm_no", use_container_width=True)
         if cancelled:
             st.session_state.pop(pending_key, None)
             st.rerun()
@@ -65,11 +65,11 @@ def selectable_table(df, id_column, display_columns, key_prefix):
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("☑ تحديد الكل", key=f"{key_prefix}_select_all_btn", width="stretch"):
+        if st.button("☑ تحديد الكل", key=f"{key_prefix}_select_all_btn", use_container_width=True):
             st.session_state[state_key] = {row_id: True for row_id in ids}
             st.rerun()
     with col2:
-        if st.button("⬜ إلغاء التحديد", key=f"{key_prefix}_deselect_all_btn", width="stretch"):
+        if st.button("⬜ إلغاء التحديد", key=f"{key_prefix}_deselect_all_btn", use_container_width=True):
             st.session_state[state_key] = {row_id: False for row_id in ids}
             st.rerun()
 
@@ -80,7 +80,7 @@ def selectable_table(df, id_column, display_columns, key_prefix):
     edited = st.data_editor(
         table,
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
         key=f"{key_prefix}_editor",
         column_config={
             "تحديد": st.column_config.CheckboxColumn("تحديد"),
@@ -260,11 +260,11 @@ def top_nav():
             unsafe_allow_html=True,
         )
     with col2:
-        if st.button("🏠 الرئيسية", width="stretch"):
+        if st.button("🏠 الرئيسية", use_container_width=True):
             st.session_state.current_page = "home"
             st.rerun()
     with col3:
-        if st.button("🚪 تسجيل الخروج", width="stretch"):
+        if st.button("🚪 تسجيل الخروج", use_container_width=True):
             logout()
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -295,4 +295,4 @@ def task_dataframe(df):
             "updated_at": "آخر تحديث",
         }
     )
-    st.dataframe(display, hide_index=True, width="stretch")
+    st.dataframe(display, hide_index=True, use_container_width=True)
