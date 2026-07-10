@@ -514,6 +514,14 @@ def delete_task(task_id):
     _invalidate_cache()
 
 
+def delete_tasks(task_ids):
+    execute(
+        "DELETE FROM tasks WHERE id = ANY(%s)",
+        (list(map(int, task_ids)),),
+    )
+    _invalidate_cache()
+
+
 @st.cache_data(ttl=20, show_spinner=False)
 def get_all_tasks():
     return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks ORDER BY id DESC")

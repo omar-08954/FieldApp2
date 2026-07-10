@@ -26,7 +26,8 @@ from database.database import (
     task_exists,
     update_material,
     update_task,
-    update_user,
+    delete_tasks,
+    update_user
 )
 from ui import TASK_STATUSES, TASK_TYPES, confirm_delete_button, fuzzy_series_mask, init_page, logout, page_header, require_login, selectable_table, task_dataframe, timed_spinner, top_nav
 
@@ -386,8 +387,7 @@ def admin_page():
         )
         if confirm_delete_button("delete_tasks", selected_ids, "🗑 حذف المهام المحددة", "مهمة محددة"):
             with timed_spinner("جاري حذف المهمة..."):
-                for task_id in selected_ids:
-                    delete_task(int(task_id))
+                delete_tasks(selected_ids)
             st.success(f"✅ تم حذف {len(selected_ids)} مهمة بنجاح.")
             st.rerun()
 
