@@ -10,7 +10,11 @@ from psycopg2.extras import RealDictCursor
 DATABASE_URL = st.secrets["DATABASE_URL"]
 TASK_COLUMNS = (
     "id, technician, task_number, subscription_number, task_type, task_status, "
-    "city, notes, created_at, updated_at"
+    "city, notes, execution_date, created_at, updated_at"
+)
+ASSIGNED_COLUMNS = (
+    "id, technician, task_number, subscription_number, task_type, task_status, "
+    "city, notes, assigned_date, assigned_by, created_at, updated_at"
 )
 CITIES = ["جدة", "مكة"]
 
@@ -148,6 +152,8 @@ def _invalidate_cache():
     get_all_tasks.clear()
     search_tasks.clear()
     _search_by_field.clear()
+    search_assigned_tasks.clear()
+    search_completed_tasks.clear()
 
 
 def _fuzzy_ratio(a, b):
@@ -312,6 +318,40 @@ def create_tables():
         """
     )
 
+    # --- إسناد المهام / المهام اليومية: جداول جديدة إضافية فقط ---
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS assigned_tasks (
+            id SERIAL PRIMARY KEY,
+            technician TEXT NOT NULL,
+            task_number TEXT NOT NULL,
+            subscription_number TEXT NOT NULL,
+            task_type TEXT NOT NULL,
+            task_status TEXT NOT NULL,
+            city TEXT,
+            notes TEXT,
+            assigned_date DATE NOT NULL,
+            assigned_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_reports (
+            id SERIAL PRIMARY KEY,
+            technician TEXT NOT NULL,
+            report_date DATE NOT NULL,
+            image_data BYTEA NOT NULL,
+            image_mime TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP,
+            UNIQUE (technician, report_date)
+        )
+        """
+    )
+
     # --- migrations: add any missing columns without touching existing data ---
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
@@ -320,6 +360,7 @@ def create_tables():
     cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS notes TEXT")
     cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
     cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS execution_date DATE")
 
     cur.execute("ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
 
@@ -327,6 +368,11 @@ def create_tables():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_subscription_number ON tasks(subscription_number)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_type_status ON tasks(task_type, task_status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_city ON tasks(city)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_execution_date ON tasks(execution_date)")
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_assigned_tasks_technician_date ON assigned_tasks(technician, assigned_date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_assigned_tasks_task_number ON assigned_tasks(task_number)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_reports_technician_date ON daily_reports(technician, report_date)")
 
     conn.commit()
     cur.close()
@@ -446,8 +492,8 @@ def task_exists(task_number, exclude_id=None):
 def add_task(technician, task_number, subscription_number, task_type, task_status, city="", notes=""):
     execute(
         """
-        INSERT INTO tasks (technician, task_number, subscription_number, task_type, task_status, city, notes, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO tasks (technician, task_number, subscription_number, task_type, task_status, city, notes, execution_date, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         (
             technician.strip(),
@@ -665,4 +711,177 @@ def decrease_material(material_id, quantity):
 
 def delete_material(material_id):
     execute("DELETE FROM materials WHERE id = %s", (int(material_id),))
+    _invalidate_cache()
+
+
+# =========================================================
+# إسناد المهام (assigned_tasks)
+# =========================================================
+
+def _assigned_task_filter_clause(technician="", assigned_date=None):
+    clauses = []
+    params = []
+    if technician and technician != "الكل":
+        clauses.append("technician = %s")
+        params.append(technician)
+    if assigned_date:
+        clauses.append("assigned_date = %s")
+        params.append(assigned_date)
+    return clauses, params
+
+
+def assigned_task_number_exists(task_number):
+    """يمنع إسناد نفس رقم المهمة مرتين، سواء كان لا يزال مسنداً أو تم تنفيذه بالفعل."""
+    task_number = task_number.strip()
+    if fetch_one("SELECT id FROM assigned_tasks WHERE task_number = %s", (task_number,)):
+        return True
+    return fetch_one("SELECT id FROM tasks WHERE task_number = %s", (task_number,)) is not None
+
+
+def assign_task(technician, task_number, subscription_number, task_type, task_status, assigned_date, city="", notes="", assigned_by=""):
+    execute(
+        """
+        INSERT INTO assigned_tasks
+            (technician, task_number, subscription_number, task_type, task_status, city, notes, assigned_date, assigned_by, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        (
+            technician.strip(),
+            task_number.strip(),
+            subscription_number.strip(),
+            task_type,
+            task_status,
+            (city or "").strip(),
+            (notes or "").strip(),
+            assigned_date,
+            (assigned_by or "").strip(),
+        ),
+    )
+    _invalidate_cache()
+
+
+def get_assigned_task_by_number(technician, task_number):
+    """يُستخدم في صفحة الفني لمعرفة إن كانت المهمة المسجَّلة موجودة أصلاً ضمن مهامه المسندة."""
+    return fetch_one(
+        f"SELECT {ASSIGNED_COLUMNS} FROM assigned_tasks WHERE technician = %s AND task_number = %s",
+        (technician.strip(), task_number.strip()),
+    )
+
+
+def delete_assigned_task(assigned_id):
+    execute("DELETE FROM assigned_tasks WHERE id = %s", (int(assigned_id),))
+    _invalidate_cache()
+
+
+def complete_assigned_task(assigned_id, subscription_number=None, task_type=None, task_status=None, notes=None, city=None):
+    """ينقل مهمة واحدة من جدول المهام المسندة إلى جدول المهام المنفذة بشكل ذري
+    (بنفس الاتصال)، ويسجل تاريخ التنفيذ، حتى لا يختل تطابق الجدولين أبداً."""
+    def _action(conn):
+        cur = conn.cursor()
+        cur.execute(f"SELECT {ASSIGNED_COLUMNS} FROM assigned_tasks WHERE id = %s", (int(assigned_id),))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            return False
+        final_subscription = (subscription_number or row["subscription_number"]).strip()
+        final_type = task_type or row["task_type"]
+        final_status = task_status or row["task_status"]
+        final_notes = notes if notes is not None else (row.get("notes") or "")
+        final_city = city if city is not None else (row.get("city") or "")
+        cur.execute(
+            """
+            INSERT INTO tasks (technician, task_number, subscription_number, task_type, task_status, city, notes, execution_date, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (row["technician"], row["task_number"], final_subscription, final_type, final_status, final_city, final_notes),
+        )
+        cur.execute("DELETE FROM assigned_tasks WHERE id = %s", (int(assigned_id),))
+        conn.commit()
+        cur.close()
+        return True
+
+    result = _with_connection(_action)
+    _invalidate_cache()
+    return result
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def search_assigned_tasks(technician="", assigned_date=None):
+    clauses, params = _assigned_task_filter_clause(technician, assigned_date)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return fetch_all(f"SELECT {ASSIGNED_COLUMNS} FROM assigned_tasks {where} ORDER BY id DESC", params)
+
+
+# اسم بديل مطلوب لنفس الوظيفة (عرض المهام المسندة حسب الفني/التاريخ)
+get_assigned_tasks = search_assigned_tasks
+
+
+# =========================================================
+# المهام اليومية / المهام المنفذة (تُقرأ من جدول tasks الحالي)
+# =========================================================
+
+@st.cache_data(ttl=20, show_spinner=False)
+def search_completed_tasks(technician="", target_date=None):
+    clauses = []
+    params = []
+    if technician and technician != "الكل":
+        clauses.append("technician = %s")
+        params.append(technician)
+    if target_date:
+        # المهام القديمة (قبل إضافة execution_date) تُقارَن بتاريخ إنشائها
+        clauses.append("COALESCE(execution_date, created_at::date) = %s")
+        params.append(target_date)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks {where} ORDER BY id DESC", params)
+
+
+# اسم بديل مطلوب لنفس الوظيفة (عرض المهام المنفذة حسب الفني/التاريخ)
+get_daily_completed_tasks = search_completed_tasks
+
+
+# =========================================================
+# تقارير المهام (daily_reports)
+# =========================================================
+
+def daily_report_exists(technician, report_date):
+    return fetch_one(
+        "SELECT id FROM daily_reports WHERE technician = %s AND report_date = %s",
+        (technician.strip(), report_date),
+    ) is not None
+
+
+def get_daily_report(technician, report_date):
+    return fetch_one(
+        """
+        SELECT id, technician, report_date, image_data, image_mime, created_at, updated_at
+        FROM daily_reports WHERE technician = %s AND report_date = %s
+        """,
+        (technician.strip(), report_date),
+    )
+
+
+def update_daily_report(report_id, image_bytes, image_mime):
+    execute(
+        "UPDATE daily_reports SET image_data = %s, image_mime = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+        (psycopg2.Binary(image_bytes), image_mime, int(report_id)),
+    )
+    _invalidate_cache()
+
+
+def save_daily_report(technician, report_date, image_bytes, image_mime):
+    """إضافة تقرير جديد، أو استبدال التقرير الموجود لنفس الفني ونفس التاريخ (تقرير واحد فقط لكل يوم)."""
+    existing = fetch_one(
+        "SELECT id FROM daily_reports WHERE technician = %s AND report_date = %s",
+        (technician.strip(), report_date),
+    )
+    if existing:
+        update_daily_report(existing["id"], image_bytes, image_mime)
+        return
+    execute(
+        """
+        INSERT INTO daily_reports (technician, report_date, image_data, image_mime, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        (technician.strip(), report_date, psycopg2.Binary(image_bytes), image_mime),
+    )
     _invalidate_cache()

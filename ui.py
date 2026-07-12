@@ -1,3 +1,4 @@
+import datetime
 import time
 from contextlib import contextmanager
 
@@ -291,8 +292,51 @@ def task_dataframe(df):
             "task_status": "حالة المهمة",
             "city": "المدينة",
             "notes": "ملاحظات",
+            "execution_date": "تاريخ التنفيذ",
             "created_at": "تاريخ الإنشاء",
             "updated_at": "آخر تحديث",
         }
     )
     st.dataframe(display, hide_index=True, use_container_width=True)
+
+
+def assigned_task_dataframe(df):
+    """نفس شكل جدول task_dataframe تماماً، مع أعمدة إضافية خاصة بالإسناد
+    (تاريخ الإسناد، وأسنِدت بواسطة)."""
+    if df.empty:
+        st.info("لا توجد بيانات للعرض.")
+        return
+    display = df.rename(
+        columns={
+            "id": "المعرف",
+            "technician": "الفني",
+            "task_number": "رقم المهمة",
+            "subscription_number": "رقم الاشتراك",
+            "task_type": "نوع المهمة",
+            "task_status": "حالة المهمة",
+            "city": "المدينة",
+            "notes": "ملاحظات",
+            "assigned_date": "تاريخ الإسناد",
+            "assigned_by": "أسندت بواسطة",
+            "created_at": "تاريخ الإنشاء",
+            "updated_at": "آخر تحديث",
+        }
+    )
+    st.dataframe(display, hide_index=True, use_container_width=True)
+
+
+def date_selector(key_prefix, default=None):
+    """حقول اليوم/الشهر/السنة بنفس أسلوب باقي التطبيق (أعمدة + مربعات رقمية).
+    تُعيد كائن تاريخ (date) صحيحاً، أو None إذا كان التاريخ المدخل غير صالح."""
+    today = default or datetime.date.today()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        day = st.number_input("اليوم", min_value=1, max_value=31, value=today.day, step=1, key=f"{key_prefix}_day")
+    with col2:
+        month = st.number_input("الشهر", min_value=1, max_value=12, value=today.month, step=1, key=f"{key_prefix}_month")
+    with col3:
+        year = st.number_input("السنة", min_value=2020, max_value=2100, value=today.year, step=1, key=f"{key_prefix}_year")
+    try:
+        return datetime.date(int(year), int(month), int(day))
+    except ValueError:
+        return None
