@@ -155,6 +155,8 @@ def _invalidate_cache():
     _search_by_field.clear()
     search_assigned_tasks.clear()
     search_completed_tasks.clear()
+    daily_report_exists.clear()
+    get_daily_report.clear()
 
 
 def _fuzzy_ratio(a, b):
@@ -837,26 +839,28 @@ get_assigned_tasks = search_assigned_tasks
 
 @st.cache_data(ttl=20, show_spinner=False)
 def search_completed_tasks(technician="", target_date=None):
-    query = f"SELECT {TASK_COLUMNS} FROM tasks WHERE 1=1"
+    clauses = []
     params = []
-
     if technician and technician != "الكل":
-        query += " AND TRIM(technician) = TRIM(%s)"
-        params.append(technician.strip())
-
+        clauses.append("technician = %s")
+        params.append(technician)
     if target_date:
-        query += " AND execution_date = %s::date"
+        # المهام القديمة (قبل إضافة execution_date) تُقارَن بتاريخ إنشائها
+        clauses.append("COALESCE(execution_date, created_at::date) = %s")
         params.append(target_date)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks {where} ORDER BY id DESC", params)
 
-    query += " ORDER BY id DESC"
 
-    return fetch_all(query, params)
+# اسم بديل مطلوب لنفس الوظيفة (عرض المهام المنفذة حسب الفني/التاريخ)
+get_daily_completed_tasks = search_completed_tasks
 
 
 # =========================================================
 # تقارير المهام (daily_reports)
 # =========================================================
 
+@st.cache_data(ttl=20, show_spinner=False)
 def daily_report_exists(technician, report_date):
     return fetch_one(
         "SELECT id FROM daily_reports WHERE technician = %s AND report_date = %s",
@@ -864,6 +868,7 @@ def daily_report_exists(technician, report_date):
     ) is not None
 
 
+@st.cache_data(ttl=20, show_spinner=False)
 def get_daily_report(technician, report_date):
     return fetch_one(
         """

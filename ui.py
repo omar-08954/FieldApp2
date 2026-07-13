@@ -146,10 +146,8 @@ def inject_style():
             font-family: 'Tajawal', system-ui, sans-serif;
         }
         .stApp {
-            background:
-                radial-gradient(circle at top left, rgba(34, 197, 94, .08), transparent 32rem),
-                linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-            color: #172033;
+            background: #F3F3F3;
+            color: #120000;
         }
         [data-testid="stSidebar"], [data-testid="collapsedControl"] {
             display: none !important;
@@ -159,63 +157,63 @@ def inject_style():
             max-width: 1180px;
         }
         h1, h2, h3 {
-            color: #172033;
+            color: #120000;
             font-weight: 800 !important;
             letter-spacing: 0;
         }
         .hero, .panel {
-            background: rgba(255,255,255,.92);
-            border: 1px solid #dbe3ef;
+            background: #DADADA;
+            border: 1px solid #c5c5c5;
             border-radius: 8px;
             padding: 1.35rem;
-            box-shadow: 0 14px 34px rgba(15, 23, 42, .08);
+            box-shadow: 0 14px 34px rgba(18, 0, 0, .08);
         }
         .hero {
             margin-bottom: 1rem;
         }
         .muted {
-            color: #64748b;
+            color: #4a4a4a;
             font-size: .98rem;
         }
         div.stButton > button, div.stDownloadButton > button {
             border-radius: 8px;
-            border: 1px solid #0f766e;
-            background: #0f766e;
+            border: 1px solid #F90202;
+            background: #F90202;
             color: white;
             min-height: 2.85rem;
             font-weight: 700;
             transition: transform .12s ease, box-shadow .12s ease;
         }
         div.stButton > button:hover, div.stDownloadButton > button:hover {
-            border-color: #115e59;
-            background: #115e59;
+            border-color: #c40101;
+            background: #c40101;
             color: white;
             transform: translateY(-1px);
-            box-shadow: 0 10px 22px rgba(15, 118, 110, .18);
+            box-shadow: 0 10px 22px rgba(249, 2, 2, .25);
         }
         div.stButton > button[kind="secondary"] {
             background: #ffffff;
-            color: #0f766e;
+            color: #F90202;
         }
         [data-testid="stMetric"] {
-            background: #ffffff;
-            border: 1px solid #dbe3ef;
+            background: #DADADA;
+            border: 1px solid #c5c5c5;
             border-radius: 8px;
             padding: 1rem;
-            box-shadow: 0 8px 22px rgba(15, 23, 42, .06);
+            box-shadow: 0 8px 22px rgba(18, 0, 0, .06);
         }
         [data-testid="stDataFrame"] {
-            border: 1px solid #dbe3ef;
+            border: 1px solid #c5c5c5;
             border-radius: 8px;
             overflow: hidden;
         }
         .top-nav {
-            background: #ffffff;
-            border: 1px solid #dbe3ef;
+            background: #DADADA;
+            border: 1px solid #c5c5c5;
             border-radius: 8px;
             padding: .85rem 1rem;
             margin-bottom: 1rem;
-            box-shadow: 0 10px 26px rgba(15, 23, 42, .06);
+            box-shadow: 0 10px 26px rgba(18, 0, 0, .06);
         }
         /* نص أسود وواضح داخل جميع مربعات الإدخال والبحث */
         .stTextInput input,
@@ -224,7 +222,7 @@ def inject_style():
         div[data-baseweb="select"] *,
         div[data-baseweb="input"] input,
         .stDateInput input {
-            color: #000000 !important;
+            color: #120000 !important;
         }
         </style>
         """,
