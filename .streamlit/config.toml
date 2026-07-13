@@ -1,9 +1,9 @@
 [theme]
-primaryColor = "#fc0000"
+primaryColor = "#f90202"
 backgroundColor = "#F3F3F3"
-secondaryBackgroundColor = "#a2a2a2"
+secondaryBackgroundColor = "#DADADA"
 textColor = "#120000"
-font = "sans serif"
+font = "IBM Plex Sans Arabic"
 
 [client]
 # يخفي قائمة الإعدادات (بما فيها تبديل المظهر) حتى لا يستطيع أي مستخدم تغيير الألوان
