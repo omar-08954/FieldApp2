@@ -405,11 +405,11 @@ def _completed_tasks_view(technician_filter, key_prefix):
 
     results = st.session_state.get(f"{key_prefix}_results", [])
 
-st.write("اسم الفني:", technician_filter)
-st.write("التاريخ المختار:", completed_date)
-st.write("عدد النتائج:", len(results))
+    st.write("اسم الفني:", technician_filter)
+    st.write("التاريخ المختار:", completed_date)
+    st.write("عدد النتائج:", len(results))
 
-task_dataframe(as_df(results))
+    task_dataframe(as_df(results))
 
 
 def daily_tasks_page():
