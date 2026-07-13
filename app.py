@@ -391,23 +391,29 @@ def assigned_tasks_page():
             st.rerun()
 
 
-@st.cache_data(ttl=20, show_spinner=False)
-def search_completed_tasks(technician="", target_date=None):
-    query = f"SELECT {TASK_COLUMNS} FROM tasks WHERE 1=1"
-    params = []
+def _completed_tasks_view(technician_filter, key_prefix):
+    """عرض المهام المنفذة حسب الفني والتاريخ."""
 
-    if technician and technician != "الكل":
-        query += " AND TRIM(technician) = TRIM(%s)"
-        params.append(technician.strip())
+    completed_date = date_selector(f"{key_prefix}_date")
 
-    if target_date:
-        query += " AND execution_date = %s::date"
-        params.append(target_date)
+    if st.button("👁️ عرض", key=f"{key_prefix}_btn", use_container_width=True):
+        if completed_date is None:
+            st.error("تاريخ غير صحيح.")
+        else:
+            with timed_spinner("جاري تحديث البيانات..."):
+                st.session_state[f"{key_prefix}_results"] = search_completed_tasks(
+                    technician_filter,
+                    completed_date,
+                )
 
-    query += " ORDER BY id DESC"
+    results = st.session_state.get(f"{key_prefix}_results", [])
 
-    return fetch_all(query, params)
-    
+    st.write("اسم الفني:", technician_filter)
+    st.write("التاريخ المختار:", completed_date)
+    st.write("عدد النتائج:", len(results))
+
+    task_dataframe(as_df(results))
+
 
 def daily_tasks_page():
     require_login(["technician"])

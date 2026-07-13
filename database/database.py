@@ -837,21 +837,20 @@ get_assigned_tasks = search_assigned_tasks
 
 @st.cache_data(ttl=20, show_spinner=False)
 def search_completed_tasks(technician="", target_date=None):
-    clauses = []
+    query = f"SELECT {TASK_COLUMNS} FROM tasks WHERE 1=1"
     params = []
+
     if technician and technician != "الكل":
-        clauses.append("technician = %s")
-        params.append(technician)
+        query += " AND TRIM(technician) = TRIM(%s)"
+        params.append(technician.strip())
+
     if target_date:
-        # المهام القديمة (قبل إضافة execution_date) تُقارَن بتاريخ إنشائها
-        clauses.append("COALESCE(execution_date, created_at::date) = %s")
+        query += " AND execution_date = %s::date"
         params.append(target_date)
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks {where} ORDER BY id DESC", params)
 
+    query += " ORDER BY id DESC"
 
-# اسم بديل مطلوب لنفس الوظيفة (عرض المهام المنفذة حسب الفني/التاريخ)
-get_daily_completed_tasks = search_completed_tasks
+    return fetch_all(query, params)
 
 
 # =========================================================
