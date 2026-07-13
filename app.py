@@ -116,7 +116,6 @@ def home_screen():
             ("🛠️ صفحة الفني", "technician"),
             ("📌 إسناد المهام", "assign_tasks"),
             ("📋 المهام المسندة", "assigned_tasks"),
-            ("📅 المهام اليومية", "daily_tasks"),
             ("📑 صفحة التقارير", "reports"),
             ("📦 المستودع", "inventory"),
             ("👥 إدارة المستخدمين", "users"),
@@ -189,128 +188,55 @@ def technician_page():
 
     my_city = st.session_state.get("city") or ""
 
-    tab_add, tab_search = st.tabs(["➕ تسجيل مهمة", "🔍 بحث عن مهمة"])
+    if my_city:
+        st.caption(f"المدينة المسجلة لحسابك: {my_city}")
+    with st.form("task_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            task_number = st.text_input("رقم المهمة")
+            task_type = st.selectbox("نوع المهمة", TASK_TYPES)
+        with col2:
+            subscription_number = st.text_input("رقم الاشتراك")
+            task_status = st.selectbox("حالة المهمة", TASK_STATUSES)
+        notes = st.text_area("ملاحظات (اختياري)", height=90)
+        submitted = st.form_submit_button("💾 تسجيل المهمة")
 
-    with tab_add:
-        if my_city:
-            st.caption(f"المدينة المسجلة لحسابك: {my_city}")
-        with st.form("task_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                task_number = st.text_input("رقم المهمة")
-                task_type = st.selectbox("نوع المهمة", TASK_TYPES)
-            with col2:
-                subscription_number = st.text_input("رقم الاشتراك")
-                task_status = st.selectbox("حالة المهمة", TASK_STATUSES)
-            notes = st.text_area("ملاحظات (اختياري)", height=90)
-            submitted = st.form_submit_button("💾 تسجيل المهمة")
-
-        if submitted:
-            task_number = task_number.strip()
-            subscription_number = subscription_number.strip()
-            if not task_number or not subscription_number:
-                st.warning("يرجى إدخال رقم المهمة ورقم الاشتراك.")
-            else:
-                with timed_spinner("💾 جاري حفظ المهمة..."):
-                    # إذا كانت هذه المهمة موجودة ضمن المهام المسندة لنفس الفني،
-                    # تُعتبر منفذة تلقائياً وتُنقل من المهام المسندة إلى المهام المنفذة
-                    assigned_match = get_assigned_task_by_number(st.session_state.fullname, task_number)
-                    if assigned_match:
-                        complete_assigned_task(
-                            assigned_match["id"],
-                            subscription_number=subscription_number,
-                            task_type=task_type,
-                            task_status=task_status,
-                            notes=notes,
+    if submitted:
+        task_number = task_number.strip()
+        subscription_number = subscription_number.strip()
+        if not task_number or not subscription_number:
+            st.warning("يرجى إدخال رقم المهمة ورقم الاشتراك.")
+        else:
+            with timed_spinner("💾 جاري حفظ المهمة..."):
+                # إذا كانت هذه المهمة موجودة ضمن المهام المسندة لنفس الفني،
+                # تُعتبر منفذة تلقائياً وتُنقل من المهام المسندة إلى المهام المنفذة
+                assigned_match = get_assigned_task_by_number(st.session_state.fullname, task_number)
+                if assigned_match:
+                    complete_assigned_task(
+                        assigned_match["id"],
+                        subscription_number=subscription_number,
+                        task_type=task_type,
+                        task_status=task_status,
+                        notes=notes,
+                        city=my_city,
+                    )
+                    exists = False
+                else:
+                    exists = task_exists(task_number)
+                    if not exists:
+                        add_task(
+                            st.session_state.fullname,
+                            task_number,
+                            subscription_number,
+                            task_type,
+                            task_status,
                             city=my_city,
+                            notes=notes,
                         )
-                        exists = False
-                    else:
-                        exists = task_exists(task_number)
-                        if not exists:
-                            add_task(
-                                st.session_state.fullname,
-                                task_number,
-                                subscription_number,
-                                task_type,
-                                task_status,
-                                city=my_city,
-                                notes=notes,
-                            )
-                if exists:
-                    st.error("❌ لا يمكن إضافة نفس رقم المهمة مرتين.")
-                else:
-                    st.success("✅ تم حفظ المهمة بنجاح.")
-
-    with tab_search:
-        st.caption("البحث يتم تلقائياً بالتسلسل: رقم المهمة ← رقم الاشتراك ← حالة المهمة ← اسم الفني.")
-        keyword = st.text_input("ابحث برقم المهمة / رقم الاشتراك / حالة المهمة / اسم الفني", key="tech_search_keyword")
-        if st.button("🔍 بحث", key="tech_search_btn", use_container_width=True):
-            if not keyword.strip():
-                st.warning("يرجى إدخال قيمة للبحث.")
+            if exists:
+                st.error("❌ لا يمكن إضافة نفس رقم المهمة مرتين.")
             else:
-                with timed_spinner("🔍 جاري البحث..."):
-                    results = search_tasks(keyword)
-                st.session_state["tech_search_results"] = results
-                if results:
-                    st.success("✅ تم العثور على المهمة.")
-                else:
-                    st.error("لم يتم العثور على مهمة مطابقة.")
-
-        results = st.session_state.get("tech_search_results", [])
-        if results:
-            df = as_df(results)
-            if len(df) > 1:
-                st.info("تم العثور على أكثر من سجل. اختر السجل المطلوب من القائمة.")
-                task_dataframe(df)
-                options = {
-                    f"{row['task_number']} - {row['subscription_number']} - {row['task_type']} - {row['task_status']}": row
-                    for _, row in df.iterrows()
-                }
-                selected_label = st.selectbox("اختر المهمة", list(options.keys()), key="tech_search_select")
-                task = options[selected_label]
-            else:
-                task = df.iloc[0].to_dict()
-
-            st.divider()
-            edit_col, delete_col = st.columns(2)
-            with edit_col:
-                st.subheader("✏️ تعديل المهمة")
-                with st.form("tech_edit_form"):
-                    new_number = st.text_input("رقم المهمة", value=task["task_number"])
-                    new_subscription = st.text_input("رقم الاشتراك", value=task["subscription_number"])
-                    new_type = st.selectbox(
-                        "نوع المهمة", TASK_TYPES,
-                        index=TASK_TYPES.index(task["task_type"]) if task["task_type"] in TASK_TYPES else 0,
-                    )
-                    new_status = st.selectbox(
-                        "حالة المهمة", TASK_STATUSES,
-                        index=TASK_STATUSES.index(task["task_status"]) if task["task_status"] in TASK_STATUSES else 0,
-                    )
-                    new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
-                    save = st.form_submit_button("✏️ حفظ التعديل")
-                if save:
-                    with timed_spinner("✏️ جاري تحديث المهمة..."):
-                        duplicate = task_exists(new_number, exclude_id=task["id"])
-                        if not duplicate:
-                            update_task(task["id"], new_number, new_subscription, new_type, new_status, notes=new_notes)
-                    if duplicate:
-                        st.error("رقم المهمة مستخدم في مهمة أخرى.")
-                    else:
-                        st.success("✅ تم تحديث المهمة.")
-                        st.session_state.pop("tech_search_results", None)
-                        st.rerun()
-
-            with delete_col:
-                st.subheader("🗑️ حذف المهمة")
-                st.warning("هل أنت متأكد من حذف هذه المهمة؟")
-                confirm = st.checkbox("نعم، أؤكد الحذف", key="tech_delete_confirm")
-                if st.button("🗑️ حذف المهمة", disabled=not confirm, use_container_width=True, key="tech_delete_btn"):
-                    with timed_spinner("🗑️ جاري حذف المهمة..."):
-                        delete_task(task["id"])
-                    st.success("✅ تم حذف المهمة.")
-                    st.session_state.pop("tech_search_results", None)
-                    st.rerun()
+                st.success("✅ تم حفظ المهمة بنجاح.")
 
 
 def select_task_from_search(state_prefix, title):
@@ -356,9 +282,18 @@ def _technician_names():
 def assign_tasks_page():
     require_login(["admin"])
     top_nav()
-    page_header("📌 إسناد المهام", "إسناد مهام جديدة للفنيين لتنفيذها في تاريخ محدد.")
+    page_header("📌 إسناد المهام", "إسناد مهام جديدة للفنيين لتنفيذها.")
 
-    technicians = _technician_names()
+    with timed_spinner("جاري تحديث البيانات..."):
+        technicians_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city"])
+    technicians_only = technicians_df[technicians_df["role"] == "technician"] if not technicians_df.empty else technicians_df
+    technicians = sorted(technicians_only["fullname"].tolist()) if not technicians_only.empty else []
+    # قراءة مدينة كل فني من جدول المستخدمين لتحديدها تلقائياً عند الإسناد
+    technician_city_map = (
+        {row["fullname"]: (row.get("city") or "") for _, row in technicians_only.iterrows()}
+        if not technicians_only.empty else {}
+    )
+
     tab_add, tab_search = st.tabs(["📌 إسناد مهمة", "🔍 بحث في المهام المسندة"])
 
     with tab_add:
@@ -366,18 +301,9 @@ def assign_tasks_page():
             st.info("لا يوجد فنيون مسجلون لإسناد المهام إليهم.")
         else:
             with st.form("assign_task_form", clear_on_submit=True):
-                col1, col2 = st.columns(2)
-                with col1:
-                    technician = st.selectbox("اختر الفني", technicians)
-                    city = st.selectbox("المدينة", CITIES)
-                    task_number = st.text_input("رقم المهمة")
-                with col2:
-                    subscription_number = st.text_input("رقم الاشتراك")
-                    task_type = st.selectbox("نوع المهمة", TASK_TYPES)
-                    task_status = st.selectbox("حالة المهمة", TASK_STATUSES)
-                notes = st.text_area("ملاحظات (اختياري)", height=90)
-                st.caption("تاريخ التنفيذ المطلوب")
-                assigned_date = date_selector("assign_task_date")
+                technician = st.selectbox("اختر الفني", technicians)
+                task_number = st.text_input("رقم المهمة")
+                subscription_number = st.text_input("رقم الاشتراك")
                 submitted = st.form_submit_button("📌 إسناد المهمة")
 
             if submitted:
@@ -385,21 +311,16 @@ def assign_tasks_page():
                 subscription_number = subscription_number.strip()
                 if not task_number or not subscription_number:
                     st.warning("يرجى إدخال رقم المهمة ورقم الاشتراك.")
-                elif assigned_date is None:
-                    st.error("تاريخ غير صحيح.")
                 else:
                     with timed_spinner("💾 جاري حفظ المهمة..."):
                         exists = assigned_task_number_exists(task_number)
                         if not exists:
+                            # المدينة تُحدَّد تلقائياً من مدينة الفني المسجلة في جدول المستخدمين
                             assign_task(
                                 technician,
                                 task_number,
                                 subscription_number,
-                                task_type,
-                                task_status,
-                                assigned_date,
-                                city=city,
-                                notes=notes,
+                                city=technician_city_map.get(technician, ""),
                                 assigned_by=st.session_state.fullname,
                             )
                     if exists:
@@ -470,67 +391,64 @@ def assigned_tasks_page():
             st.rerun()
 
 
-def daily_tasks_page():
-    require_login(["admin", "technician"])
-    top_nav()
-    page_header("📅 المهام اليومية", "عرض المهام المنفذة يومياً ورفع تقارير المهام.")
+def _completed_tasks_view(technician_filter, key_prefix):
+    """منطق موحّد لعرض المهام المنفذة حسب اسم الفني + اليوم/الشهر/السنة، بالاعتماد
+    الكامل على execution_date. يُستخدم من صفحة المهام اليومية (الفني) ومن تبويب
+    المهام اليومية داخل لوحة المدير، حتى يبقى السلوك متطابقاً في المكانين."""
+    completed_date = date_selector(f"{key_prefix}_date")
+    if st.button("👁️ عرض", key=f"{key_prefix}_btn", use_container_width=True):
+        if completed_date is None:
+            st.error("تاريخ غير صحيح.")
+        else:
+            with timed_spinner("جاري تحديث البيانات..."):
+                st.session_state[f"{key_prefix}_results"] = search_completed_tasks(technician_filter, completed_date)
 
-    is_admin = st.session_state.role == "admin"
-    tab_completed, tab_reports = st.tabs(["✅ المهام المنفذة", "📷 تقارير المهام"])
+    results = st.session_state.get(f"{key_prefix}_results", [])
+    task_dataframe(as_df(results))
+
+
+def daily_tasks_page():
+    require_login(["technician"])
+    top_nav()
+    page_header("📅 المهام اليومية", "عرض المهام المنفذة يومياً ورفع تقرير المهمة.")
+
+    tab_completed, tab_report = st.tabs(["✅ المهام المنفذة", "📷 إضافة تقرير"])
 
     with tab_completed:
-        if is_admin:
-            technicians = _technician_names()
-            technician_filter = st.selectbox("الفني", ["الكل"] + technicians, key="daily_completed_tech")
-        else:
-            technician_filter = st.session_state.fullname
+        _completed_tasks_view(st.session_state.fullname, "daily_completed")
 
-        completed_date = date_selector("daily_completed_date")
-        if st.button("👁️ عرض", key="daily_completed_btn", use_container_width=True):
-            if completed_date is None:
+    with tab_report:
+        report_date = date_selector("daily_report_date")
+        if st.button("👁️ عرض", key="daily_report_view_btn", use_container_width=True):
+            if report_date is None:
                 st.error("تاريخ غير صحيح.")
             else:
                 with timed_spinner("جاري تحديث البيانات..."):
-                    st.session_state["daily_completed_results"] = search_completed_tasks(technician_filter, completed_date)
+                    existing = get_daily_report(st.session_state.fullname, report_date)
+                st.session_state["daily_report_selected_date"] = report_date
+                st.session_state["daily_report_existing"] = existing
 
-        results = st.session_state.get("daily_completed_results", [])
-        task_dataframe(as_df(results))
+        selected_date = st.session_state.get("daily_report_selected_date")
+        if selected_date:
+            existing = st.session_state.get("daily_report_existing")
+            if existing:
+                st.success("✅ يوجد تقرير محفوظ لهذا التاريخ. يمكنك استبداله برفع صورة جديدة.")
+                st.image(bytes(existing["image_data"]), use_container_width=True)
+            else:
+                st.info("لا يوجد تقرير لهذا التاريخ بعد.")
 
-    with tab_reports:
-        if st.session_state.role != "technician":
-            st.info("هذا التبويب مخصص لرفع التقارير من قبل الفنيين. يمكنك مشاهدة تقارير الفنيين من تبويب 📷 تقارير المهام داخل لوحة المدير.")
-        else:
-            report_date = date_selector("daily_report_date")
-            if st.button("👁️ عرض", key="daily_report_view_btn", use_container_width=True):
-                if report_date is None:
-                    st.error("تاريخ غير صحيح.")
-                else:
-                    with timed_spinner("جاري تحديث البيانات..."):
-                        existing = get_daily_report(st.session_state.fullname, report_date)
-                    st.session_state["daily_report_selected_date"] = report_date
-                    st.session_state["daily_report_existing"] = existing
-
-            selected_date = st.session_state.get("daily_report_selected_date")
-            if selected_date:
-                existing = st.session_state.get("daily_report_existing")
-                if existing:
-                    st.success("✅ يوجد تقرير محفوظ لهذا التاريخ. يمكنك استبداله برفع صورة جديدة.")
-                    st.image(bytes(existing["image_data"]), use_container_width=True)
-                else:
-                    st.info("لا يوجد تقرير لهذا التاريخ بعد.")
-
-                uploaded_report = st.file_uploader("📷 إضافة تقرير", type=["jpg", "jpeg", "png"], key="daily_report_uploader")
-                if uploaded_report is not None and st.button("💾 حفظ التقرير", key="daily_report_save_btn", use_container_width=True):
-                    with timed_spinner("💾 جاري حفظ المهمة..."):
-                        save_daily_report(
-                            st.session_state.fullname,
-                            selected_date,
-                            uploaded_report.getvalue(),
-                            uploaded_report.type or "image/jpeg",
-                        )
-                    st.success("✅ تم حفظ المهمة بنجاح.")
-                    st.session_state.pop("daily_report_existing", None)
-                    st.rerun()
+            uploaded_report = st.file_uploader("📷 إضافة تقرير", type=["jpg", "jpeg", "png"], key="daily_report_uploader")
+            if uploaded_report is not None and st.button("💾 حفظ التقرير", key="daily_report_save_btn", use_container_width=True):
+                with timed_spinner("💾 جاري حفظ المهمة..."):
+                    save_daily_report(
+                        st.session_state.fullname,
+                        selected_date,
+                        uploaded_report.getvalue(),
+                        uploaded_report.type or "image/jpeg",
+                    )
+                st.success("✅ تم حفظ المهمة بنجاح.")
+                st.session_state.pop("daily_report_existing", None)
+                st.rerun()
 
 
 def admin_page():
@@ -540,8 +458,8 @@ def admin_page():
     with timed_spinner("جاري تحديث البيانات..."):
         df = as_df(search_tasks(), ["id", "technician", "task_number", "subscription_number", "task_type", "task_status"])
 
-    tab_manage, tab_data, tab_transfer, tab_task_reports = st.tabs(
-        ["📋 إدارة المهام", "✏️ إدارة البيانات", "📥 الاستيراد والتصدير", "📷 تقارير المهام"]
+    tab_manage, tab_data, tab_transfer, tab_task_reports, tab_daily_tasks = st.tabs(
+        ["📋 إدارة المهام", "✏️ إدارة البيانات", "📥 الاستيراد والتصدير", "📷 تقارير المهام", "📅 المهام اليومية"]
     )
     with tab_manage:
         total = len(df)
@@ -714,6 +632,17 @@ def admin_page():
                     st.image(bytes(result["image_data"]), use_container_width=True)
                 else:
                     st.info("لا يوجد تقرير لهذا الفني في هذا التاريخ.")
+
+    with tab_daily_tasks:
+        technicians_daily = (
+            sorted(technicians_df[technicians_df["role"] == "technician"]["fullname"].tolist())
+            if not technicians_df.empty else []
+        )
+        if not technicians_daily:
+            st.info("لا يوجد فنيون مسجلون.")
+        else:
+            technician_daily = st.selectbox("الفني", technicians_daily, key="admin_daily_tasks_tech")
+            _completed_tasks_view(technician_daily, "admin_daily_tasks")
 
 
 def _city_report_tab(city):

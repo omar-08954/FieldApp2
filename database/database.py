@@ -1,4 +1,5 @@
 from difflib import SequenceMatcher
+import datetime
 import re
 
 import streamlit as st
@@ -489,11 +490,17 @@ def task_exists(task_number, exclude_id=None):
     ) is not None
 
 
-def add_task(technician, task_number, subscription_number, task_type, task_status, city="", notes=""):
+def add_task(technician, task_number, subscription_number, task_type, task_status, city="", notes="", execution_date=None):
+    # يُحسب تاريخ التنفيذ بلغة Python (نفس مصدر التاريخ المستخدم في اختيار
+    # اليوم/الشهر/السنة بالواجهة) بدل الاعتماد على CURRENT_DATE في قاعدة
+    # البيانات، لتفادي أي فارق توقيت بين خادم القاعدة والتطبيق يمنع ظهور
+    # المهمة في نفس اليوم داخل صفحة المهام اليومية.
+    if execution_date is None:
+        execution_date = datetime.date.today()
     execute(
         """
         INSERT INTO tasks (technician, task_number, subscription_number, task_type, task_status, city, notes, execution_date, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
         (
             technician.strip(),
@@ -503,6 +510,7 @@ def add_task(technician, task_number, subscription_number, task_type, task_statu
             task_status,
             (city or "").strip(),
             (notes or "").strip(),
+            execution_date,
         ),
     )
     _invalidate_cache()
@@ -738,7 +746,11 @@ def assigned_task_number_exists(task_number):
     return fetch_one("SELECT id FROM tasks WHERE task_number = %s", (task_number,)) is not None
 
 
-def assign_task(technician, task_number, subscription_number, task_type, task_status, assigned_date, city="", notes="", assigned_by=""):
+def assign_task(technician, task_number, subscription_number, assigned_date=None, task_type="تقني", task_status="عائق", city="", notes="", assigned_by=""):
+    # المدير لم يعد يختار نوع/حالة/تاريخ المهمة، لذا لها قيم افتراضية معقولة
+    # (نفس الافتراضات المستخدمة أصلاً عند استيراد Excel بدون هذه الأعمدة)
+    if assigned_date is None:
+        assigned_date = datetime.date.today()
     execute(
         """
         INSERT INTO assigned_tasks
@@ -773,9 +785,12 @@ def delete_assigned_task(assigned_id):
     _invalidate_cache()
 
 
-def complete_assigned_task(assigned_id, subscription_number=None, task_type=None, task_status=None, notes=None, city=None):
+def complete_assigned_task(assigned_id, subscription_number=None, task_type=None, task_status=None, notes=None, city=None, execution_date=None):
     """ينقل مهمة واحدة من جدول المهام المسندة إلى جدول المهام المنفذة بشكل ذري
     (بنفس الاتصال)، ويسجل تاريخ التنفيذ، حتى لا يختل تطابق الجدولين أبداً."""
+    if execution_date is None:
+        execution_date = datetime.date.today()
+
     def _action(conn):
         cur = conn.cursor()
         cur.execute(f"SELECT {ASSIGNED_COLUMNS} FROM assigned_tasks WHERE id = %s", (int(assigned_id),))
@@ -791,9 +806,9 @@ def complete_assigned_task(assigned_id, subscription_number=None, task_type=None
         cur.execute(
             """
             INSERT INTO tasks (technician, task_number, subscription_number, task_type, task_status, city, notes, execution_date, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_DATE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
-            (row["technician"], row["task_number"], final_subscription, final_type, final_status, final_city, final_notes),
+            (row["technician"], row["task_number"], final_subscription, final_type, final_status, final_city, final_notes, execution_date),
         )
         cur.execute("DELETE FROM assigned_tasks WHERE id = %s", (int(assigned_id),))
         conn.commit()
