@@ -5,6 +5,8 @@ from contextlib import contextmanager
 import streamlit as st
 from difflib import SequenceMatcher
 
+from config import SETTINGS
+
 
 TASK_TYPES = ["تقني", "زيرا"]
 TASK_STATUSES = ["عائق", "تم الفحص", "مزال"]
@@ -152,8 +154,17 @@ def inject_style():
         [data-testid="stSidebar"], [data-testid="collapsedControl"] {
             display: none !important;
         }
+        /* إخفاء عناصر Streamlit الظاهرة للمستخدم (بالإضافة إلى toolbarMode="minimal"
+           الرسمي في .streamlit/config.toml). هذه المحددات (#MainMenu/footer/header)
+           مستقرة منذ سنوات طويلة في Streamlit، لكن لا يوجد لها مفتاح رسمي مخصص في
+           config.toml حتى الآن، لذا استُخدم CSS كحل معروف وموثّق لهذه النقطة تحديداً. */
+        #MainMenu, footer, header [data-testid="stToolbar"] {
+            visibility: hidden !important;
+            height: 0 !important;
+        }
         .block-container {
             padding-top: 1.4rem;
+            padding-bottom: 2rem;
             max-width: 1180px;
         }
         h1, h2, h3 {
@@ -207,6 +218,27 @@ def inject_style():
             border-radius: 8px;
             overflow: hidden;
         }
+        div[data-testid="stForm"] {
+            background: #ffffff;
+            border: 1px solid #c5c5c5;
+            border-radius: 8px;
+            padding: 1.1rem 1.2rem;
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: .35rem;
+            border-bottom: 1px solid #c5c5c5;
+        }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 8px 8px 0 0;
+            padding: .55rem 1rem;
+            font-weight: 700;
+        }
+        .stTabs [aria-selected="true"] {
+            color: #F90202 !important;
+        }
+        div[data-testid="stMetricValue"] {
+            color: #F90202;
+        }
         .top-nav {
             background: #DADADA;
             border: 1px solid #c5c5c5;
@@ -232,10 +264,20 @@ def inject_style():
 
 def logout():
     # مسح كامل للـ Session حتى لا يتبقى أي أثر من المستخدم السابق
+    username = st.session_state.get("username")
+    if username:
+        try:
+            from database.database import log_action
+            log_action(username, "تسجيل خروج")
+        except Exception:
+            pass
     st.session_state.clear()
     init_session()
     st.session_state.current_page = "login"
     st.rerun()
+
+
+SESSION_TIMEOUT_SECONDS = SETTINGS.session_timeout_seconds
 
 
 def require_login(roles=None):
@@ -244,6 +286,17 @@ def require_login(roles=None):
         st.warning("يرجى تسجيل الدخول أولاً.")
         st.session_state.current_page = "login"
         st.stop()
+
+    last_activity = st.session_state.get("last_activity")
+    now = time.time()
+    if last_activity and (now - last_activity) > SESSION_TIMEOUT_SECONDS:
+        st.session_state.clear()
+        init_session()
+        st.session_state.current_page = "login"
+        st.warning("⏱️ تم تسجيل خروجك تلقائياً بسبب عدم النشاط لمدة 30 دقيقة.")
+        st.stop()
+    st.session_state.last_activity = now
+
     if roles and st.session_state.get("role") not in roles:
         st.error("ليس لديك صلاحية للوصول لهذه الصفحة.")
         st.stop()

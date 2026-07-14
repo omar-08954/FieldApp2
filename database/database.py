@@ -1,14 +1,25 @@
 from difflib import SequenceMatcher
 import datetime
 import re
+import time
 
 import streamlit as st
 import psycopg2
 import psycopg2.pool
-from psycopg2.extras import RealDictCursor
+import bcrypt
+from psycopg2.extras import RealDictCursor, execute_values
+
+from database.storage import (
+    delete_report_image,
+    report_image_url,
+    upload_report_image,
+)
+from config import SETTINGS
+from logging_config import get_logger
 
 
 DATABASE_URL = st.secrets["DATABASE_URL"]
+LOGGER = get_logger(__name__)
 TASK_COLUMNS = (
     "id, technician, task_number, subscription_number, task_type, task_status, "
     "city, notes, execution_date, created_at, updated_at"
@@ -157,6 +168,12 @@ def _invalidate_cache():
     search_completed_tasks.clear()
     daily_report_exists.clear()
     get_daily_report.clear()
+    get_system_counts.clear()
+    get_tasks_breakdown.clear()
+    get_security_overview.clear()
+    get_audit_log.clear()
+    get_error_log.clear()
+    get_database_info.clear()
 
 
 def _fuzzy_ratio(a, b):
@@ -199,7 +216,12 @@ def _fuzzy_match_rows(rows, keyword, fields, threshold=0.6):
 def _connection_pool():
     # اتصال مُعاد استخدامه بدل فتح اتصال TCP/TLS جديد بكل استعلام
     # (ThreadedConnectionPool لأن Streamlit يخدم كل جلسة مستخدم في Thread خاص بها)
-    return psycopg2.pool.ThreadedConnectionPool(1, 10, dsn=DATABASE_URL, cursor_factory=RealDictCursor)
+    return psycopg2.pool.ThreadedConnectionPool(
+        SETTINGS.database_pool_min_connections,
+        SETTINGS.database_pool_max_connections,
+        dsn=DATABASE_URL,
+        cursor_factory=RealDictCursor,
+    )
 
 
 def get_connection():
@@ -214,6 +236,26 @@ def _release_connection(conn):
             conn.close()
         except Exception:
             pass
+
+
+_QUERY_STATS = {"count": 0, "total_ms": 0.0, "slowest": []}  # slowest: [(ms, query_snippet)], newest-bounded
+
+
+def _record_query_stat(query, elapsed_ms):
+    _QUERY_STATS["count"] += 1
+    _QUERY_STATS["total_ms"] += elapsed_ms
+    snippet = " ".join(query.split())[:120]
+    _QUERY_STATS["slowest"].append((elapsed_ms, snippet))
+    _QUERY_STATS["slowest"].sort(key=lambda item: item[0], reverse=True)
+    del _QUERY_STATS["slowest"][10:]
+
+
+def get_query_stats():
+    """إحصاءات أداء خفيفة الوزن (في الذاكرة، بلا أي تكلفة على قاعدة البيانات)
+    تُستخدم في تبويبي الأداء ومساعد المطور بمركز المطور."""
+    count = _QUERY_STATS["count"]
+    avg_ms = (_QUERY_STATS["total_ms"] / count) if count else 0.0
+    return {"count": count, "avg_ms": avg_ms, "slowest": list(_QUERY_STATS["slowest"])}
 
 
 def _with_connection(action):
@@ -250,7 +292,11 @@ def execute(query, params=()):
         conn.commit()
         cur.close()
 
-    _with_connection(_action)
+    started = time.perf_counter()
+    try:
+        _with_connection(_action)
+    finally:
+        _record_query_stat(query, (time.perf_counter() - started) * 1000)
 
 
 def fetch_one(query, params=()):
@@ -261,7 +307,11 @@ def fetch_one(query, params=()):
         cur.close()
         return row
 
-    return _with_connection(_action)
+    started = time.perf_counter()
+    try:
+        return _with_connection(_action)
+    finally:
+        _record_query_stat(query, (time.perf_counter() - started) * 1000)
 
 
 def fetch_all(query, params=()):
@@ -272,7 +322,39 @@ def fetch_all(query, params=()):
         cur.close()
         return rows
 
-    return _with_connection(_action)
+    started = time.perf_counter()
+    try:
+        return _with_connection(_action)
+    finally:
+        _record_query_stat(query, (time.perf_counter() - started) * 1000)
+
+
+def hash_password(password):
+    """يُنتج hash آمناً (bcrypt) لكلمة مرور نصية عادية."""
+    return bcrypt.hashpw((password or "").encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password, hashed):
+    """يقارن كلمة مرور نصية بـ hash محفوظ. يُعيد False بأمان لأي قيمة غير صالحة
+    بدل رفع استثناء (مثلاً كلمة مرور قديمة غير مشفّرة قبل انتهاء الـ Migration)."""
+    if not hashed:
+        return False
+    try:
+        return bcrypt.checkpw((password or "").encode("utf-8"), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+
+def is_password_strong(password):
+    """قواعد بسيطة وواضحة لمنع كلمات المرور الضعيفة عند الإنشاء أو التغيير."""
+    password = password or ""
+    if len(password) < 8:
+        return False, "يجب ألا تقل كلمة المرور عن 8 أحرف."
+    if password.isdigit():
+        return False, "لا يمكن أن تتكون كلمة المرور من أرقام فقط."
+    if password.lower() in {"password", "12345678", "qwertyui", "11111111", "abcdefgh"}:
+        return False, "كلمة المرور شائعة جداً وضعيفة، اختر كلمة مرور أقوى."
+    return True, ""
 
 
 def create_tables():
@@ -346,8 +428,9 @@ def create_tables():
             id SERIAL PRIMARY KEY,
             technician TEXT NOT NULL,
             report_date DATE NOT NULL,
-            image_data BYTEA NOT NULL,
+            image_data BYTEA,
             image_mime TEXT NOT NULL,
+            image_url TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP,
             UNIQUE (technician, report_date)
@@ -358,24 +441,112 @@ def create_tables():
     # --- migrations: add any missing columns without touching existing data ---
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INTEGER DEFAULT 0")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP")
 
     cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS city TEXT")
     cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS notes TEXT")
     cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
     cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
     cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS execution_date DATE")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_by TEXT")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_by TEXT")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
 
     cur.execute("ALTER TABLE materials ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP")
+    cur.execute("ALTER TABLE materials ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
+    cur.execute("ALTER TABLE assigned_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
+    cur.execute("ALTER TABLE daily_reports ADD COLUMN IF NOT EXISTS image_url TEXT")
+    cur.execute("ALTER TABLE daily_reports ALTER COLUMN image_data DROP NOT NULL")
+
+    # سجل العمليات وسجل الأخطاء (جداول إضافية جديدة فقط، لا تمس أي جدول قائم)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id SERIAL PRIMARY KEY,
+            username TEXT,
+            action TEXT NOT NULL,
+            details TEXT,
+            ip_address TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS error_log (
+            id SERIAL PRIMARY KEY,
+            error_type TEXT,
+            file_name TEXT,
+            function_name TEXT,
+            message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    # المهام اليومية يجب أن تعتمد بالكامل على execution_date بدون أي احتياج
+    # لـ created_at كـ fallback. نُعبّئ السجلات القديمة (قبل إضافة العمود) مرة
+    # واحدة فقط، حتى يصبح فهرس execution_date قابلاً للاستخدام مباشرة في البحث.
+    cur.execute("UPDATE tasks SET execution_date = created_at::date WHERE execution_date IS NULL")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_task_number ON tasks(task_number)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_subscription_number ON tasks(subscription_number)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_type_status ON tasks(task_type, task_status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_city ON tasks(city)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_execution_date ON tasks(execution_date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_technician_execution ON tasks(technician, execution_date)")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_assigned_tasks_technician_date ON assigned_tasks(technician, assigned_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_assigned_tasks_task_number ON assigned_tasks(task_number)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_reports_technician_date ON daily_reports(technician, report_date)")
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_error_log_created_at ON error_log(created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_reports_image_url ON daily_reports(image_url) WHERE image_url IS NOT NULL")
+
+    # Trigram indexes make the existing ILIKE search scale to large task
+    # tables.  The extension is optional in managed PostgreSQL deployments,
+    # so a permission failure must not prevent the application from starting.
+    cur.execute("SAVEPOINT optional_trigram")
+    try:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_task_number_trgm ON tasks USING GIN (task_number gin_trgm_ops)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_subscription_number_trgm ON tasks USING GIN (subscription_number gin_trgm_ops)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_technician_trgm ON tasks USING GIN (technician gin_trgm_ops)")
+    except psycopg2.Error:
+        cur.execute("ROLLBACK TO SAVEPOINT optional_trigram")
+        LOGGER.warning("pg_trgm is unavailable; ILIKE search will use the standard indexes.")
+    finally:
+        cur.execute("RELEASE SAVEPOINT optional_trigram")
+
+    # Add database-level duplicate protection only when legacy data is
+    # already clean.  Existing records are never deleted or changed merely
+    # to create a constraint.
+    cur.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM tasks GROUP BY task_number HAVING COUNT(*) > 1) THEN
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_task_number ON tasks(task_number);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM assigned_tasks GROUP BY task_number HAVING COUNT(*) > 1) THEN
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_assigned_tasks_task_number ON assigned_tasks(task_number);
+            END IF;
+        END $$;
+        """
+    )
+
+    # Migration لمرة واحدة: تشفير أي كلمات مرور قديمة لا تزال نصاً عادياً
+    # (كلمات مرور bcrypt تبدأ دائماً بـ $2). لا تُفقَد بيانات أي مستخدم، ولا
+    # يتعطل تسجيل الدخول لاحقاً لأن login_user يتحقق عبر verify_password.
+    cur.execute("SELECT id, password FROM users WHERE password IS NOT NULL AND password NOT LIKE '$2%'")
+    plaintext_users = cur.fetchall()
+    for u in plaintext_users:
+        new_hash = bcrypt.hashpw(u["password"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        cur.execute("UPDATE users SET password = %s WHERE id = %s", (new_hash, u["id"]))
 
     conn.commit()
     cur.close()
@@ -383,21 +554,63 @@ def create_tables():
 
 
 def login_user(username, password):
-    return fetch_one(
+    """يتحقق من بيانات الدخول عبر bcrypt، مع قفل الحساب تلقائياً بعد 5 محاولات
+    فاشلة متتالية لمدة 15 دقيقة. يُعيد قاموساً موحداً دائماً:
+    - {"ok": True, "user": {...}} عند نجاح الدخول
+    - {"ok": False, "locked": True, "locked_until": <datetime>} إذا كان الحساب مقفلاً
+    - {"ok": False, "locked": False} لبيانات دخول خاطئة أو مستخدم غير موجود
+    """
+    username = (username or "").strip()
+    user = fetch_one(
         """
-        SELECT id, username, fullname, role, city
-        FROM users
-        WHERE username = %s AND password = %s
+        SELECT id, username, password, fullname, role, city, failed_attempts, locked_until
+        FROM users WHERE username = %s
         """,
-        (username, password),
+        (username,),
     )
+    if not user:
+        return {"ok": False, "locked": False}
+
+    now = datetime.datetime.now()
+    locked_until = user.get("locked_until")
+    if locked_until and locked_until > now:
+        return {"ok": False, "locked": True, "locked_until": locked_until}
+
+    if not verify_password(password, user["password"]):
+        attempts = (user.get("failed_attempts") or 0) + 1
+        new_locked_until = (
+            now + datetime.timedelta(minutes=SETTINGS.account_lock_minutes)
+            if attempts >= SETTINGS.max_login_attempts else None
+        )
+        execute(
+            "UPDATE users SET failed_attempts = %s, locked_until = %s WHERE id = %s",
+            (attempts, new_locked_until, user["id"]),
+        )
+        _invalidate_cache()
+        if new_locked_until:
+            return {"ok": False, "locked": True, "locked_until": new_locked_until}
+        return {"ok": False, "locked": False}
+
+    execute(
+        "UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login = CURRENT_TIMESTAMP WHERE id = %s",
+        (user["id"],),
+    )
+    _invalidate_cache()
+    return {
+        "ok": True,
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "fullname": user["fullname"],
+            "role": user["role"],
+            "city": user["city"],
+        },
+    }
 
 
 def check_current_password(username, current_password):
-    return fetch_one(
-        "SELECT id FROM users WHERE username = %s AND password = %s",
-        (username, current_password),
-    ) is not None
+    user = fetch_one("SELECT password FROM users WHERE username = %s", (username,))
+    return bool(user) and verify_password(current_password, user["password"])
 
 
 def add_user(username, password, fullname, role, city=""):
@@ -406,7 +619,7 @@ def add_user(username, password, fullname, role, city=""):
         INSERT INTO users (username, password, fullname, role, city)
         VALUES (%s, %s, %s, %s, %s)
         """,
-        (username.strip(), password.strip(), fullname.strip(), role, (city or "").strip()),
+        (username.strip(), hash_password(password.strip()), fullname.strip(), role, (city or "").strip()),
     )
     _invalidate_cache()
 
@@ -416,7 +629,7 @@ def delete_user(user_id):
     _invalidate_cache()
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_reference_seconds, show_spinner=False)
 def get_all_users():
     return fetch_all(
         """
@@ -430,7 +643,7 @@ def get_all_users():
 def change_password(username, new_password):
     execute(
         "UPDATE users SET password = %s WHERE username = %s",
-        (new_password, username),
+        (hash_password(new_password), username),
     )
     _invalidate_cache()
 
@@ -443,7 +656,7 @@ def update_user(user_id, fullname, password, role, city=None):
             SET fullname = %s, password = %s, role = %s, city = %s
             WHERE id = %s
             """,
-            (fullname.strip(), password.strip(), role, city, int(user_id)),
+            (fullname.strip(), hash_password(password.strip()), role, city, int(user_id)),
         )
         _invalidate_cache()
         return
@@ -454,7 +667,7 @@ def update_user(user_id, fullname, password, role, city=None):
             SET fullname = %s, password = %s, role = %s
             WHERE id = %s
             """,
-            (fullname.strip(), password.strip(), role, int(user_id)),
+            (fullname.strip(), hash_password(password.strip()), role, int(user_id)),
         )
         _invalidate_cache()
         return
@@ -518,6 +731,33 @@ def add_task(technician, task_number, subscription_number, task_type, task_statu
     _invalidate_cache()
 
 
+def bulk_add_tasks(rows):
+    """إدراج جماعي دفعة واحدة (INSERT متعدد الصفوف) بدل استعلام منفصل لكل
+    مهمة، لتسريع استيراد ملفات Excel الكبيرة بشكل ملحوظ. rows: قائمة tuples
+    بالترتيب: (technician, task_number, subscription_number, task_type,
+    task_status, city, notes, execution_date)."""
+    if not rows:
+        return
+
+    def _action(conn):
+        cur = conn.cursor()
+        execute_values(
+            cur,
+            """
+            INSERT INTO tasks
+                (technician, task_number, subscription_number, task_type, task_status, city, notes, execution_date, created_at, updated_at)
+            VALUES %s
+            """,
+            rows,
+            template="(%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        conn.commit()
+        cur.close()
+
+    _with_connection(_action)
+    _invalidate_cache()
+
+
 def update_task(task_id, task_number, subscription_number, task_type, task_status, city=None, notes=None):
     if city is not None or notes is not None:
         execute(
@@ -578,7 +818,7 @@ def delete_tasks(task_ids):
     _invalidate_cache()
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_search_seconds, show_spinner=False)
 def get_all_tasks():
     return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks ORDER BY id DESC")
 
@@ -601,7 +841,7 @@ def _task_filter_clause(technician="", task_type="", task_status="", city=""):
     return clauses, params
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_search_seconds, show_spinner=False)
 def _search_by_field(field, keyword, technician="", task_type="", task_status="", city="", limit=None):
     clauses, params = _task_filter_clause(technician, task_type, task_status, city)
     clauses.append(f"{field} ILIKE %s")
@@ -613,7 +853,7 @@ def _search_by_field(field, keyword, technician="", task_type="", task_status=""
     return fetch_all(query, params)
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_search_seconds, show_spinner=False)
 def search_tasks(keyword="", technician="", task_type="", task_status="", city=""):
     """Sequential smart search.
 
@@ -647,10 +887,6 @@ def search_tasks(keyword="", technician="", task_type="", task_status="", city="
     return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks {where} ORDER BY id DESC", params)
 
 
-def create_materials_table():
-    create_tables()
-
-
 def material_exists(name, exclude_id=None):
     if exclude_id:
         return fetch_one(
@@ -674,7 +910,7 @@ def add_material(name, quantity, unit, notes):
     _invalidate_cache()
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_reference_seconds, show_spinner=False)
 def get_all_materials():
     return fetch_all("SELECT * FROM materials ORDER BY name")
 
@@ -782,11 +1018,6 @@ def get_assigned_task_by_number(technician, task_number):
     )
 
 
-def delete_assigned_task(assigned_id):
-    execute("DELETE FROM assigned_tasks WHERE id = %s", (int(assigned_id),))
-    _invalidate_cache()
-
-
 def complete_assigned_task(assigned_id, subscription_number=None, task_type=None, task_status=None, notes=None, city=None, execution_date=None):
     """ينقل مهمة واحدة من جدول المهام المسندة إلى جدول المهام المنفذة بشكل ذري
     (بنفس الاتصال)، ويسجل تاريخ التنفيذ، حتى لا يختل تطابق الجدولين أبداً."""
@@ -822,7 +1053,7 @@ def complete_assigned_task(assigned_id, subscription_number=None, task_type=None
     return result
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_search_seconds, show_spinner=False)
 def search_assigned_tasks(technician="", assigned_date=None):
     clauses, params = _assigned_task_filter_clause(technician, assigned_date)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
@@ -837,7 +1068,7 @@ get_assigned_tasks = search_assigned_tasks
 # المهام اليومية / المهام المنفذة (تُقرأ من جدول tasks الحالي)
 # =========================================================
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_search_seconds, show_spinner=False)
 def search_completed_tasks(technician="", target_date=None):
     clauses = []
     params = []
@@ -845,8 +1076,10 @@ def search_completed_tasks(technician="", target_date=None):
         clauses.append("technician = %s")
         params.append(technician)
     if target_date:
-        # المهام القديمة (قبل إضافة execution_date) تُقارَن بتاريخ إنشائها
-        clauses.append("COALESCE(execution_date, created_at::date) = %s")
+        # الاعتماد الكامل على execution_date (تمت تعبئة السجلات القديمة عبر
+        # Migration في create_tables())، بلا أي حاجة لـ created_at، مما يسمح
+        # أيضاً باستخدام فهرس (technician, execution_date) مباشرة.
+        clauses.append("execution_date = %s")
         params.append(target_date)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks {where} ORDER BY id DESC", params)
@@ -860,7 +1093,7 @@ get_daily_completed_tasks = search_completed_tasks
 # تقارير المهام (daily_reports)
 # =========================================================
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_operational_seconds, show_spinner=False)
 def daily_report_exists(technician, report_date):
     return fetch_one(
         "SELECT id FROM daily_reports WHERE technician = %s AND report_date = %s",
@@ -868,21 +1101,33 @@ def daily_report_exists(technician, report_date):
     ) is not None
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=SETTINGS.cache_ttl_operational_seconds, show_spinner=False)
 def get_daily_report(technician, report_date):
-    return fetch_one(
+    row = fetch_one(
         """
-        SELECT id, technician, report_date, image_data, image_mime, created_at, updated_at
+        SELECT id, technician, report_date, image_data, image_mime, image_url, created_at, updated_at
         FROM daily_reports WHERE technician = %s AND report_date = %s
         """,
         (technician.strip(), report_date),
     )
+    if row is None:
+        return None
+    # psycopg2 يُرجع أعمدة BYTEA كـ memoryview، وهو نوع غير قابل للـ Pickle
+    # فيفشل @st.cache_data. نحوّله هنا إلى dict عادي وbytes صريحة قبل التخزين.
+    row = dict(row)
+    if row.get("image_data") is not None:
+        row["image_data"] = bytes(row["image_data"])
+    return row
 
 
-def update_daily_report(report_id, image_bytes, image_mime):
+def update_daily_report(report_id, image_url, image_mime):
     execute(
-        "UPDATE daily_reports SET image_data = %s, image_mime = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
-        (psycopg2.Binary(image_bytes), image_mime, int(report_id)),
+        """
+        UPDATE daily_reports
+        SET image_data = NULL, image_url = %s, image_mime = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        """,
+        (image_url, image_mime, int(report_id)),
     )
     _invalidate_cache()
 
@@ -890,17 +1135,189 @@ def update_daily_report(report_id, image_bytes, image_mime):
 def save_daily_report(technician, report_date, image_bytes, image_mime):
     """إضافة تقرير جديد، أو استبدال التقرير الموجود لنفس الفني ونفس التاريخ (تقرير واحد فقط لكل يوم)."""
     existing = fetch_one(
-        "SELECT id FROM daily_reports WHERE technician = %s AND report_date = %s",
+        "SELECT id, image_url FROM daily_reports WHERE technician = %s AND report_date = %s",
         (technician.strip(), report_date),
     )
-    if existing:
-        update_daily_report(existing["id"], image_bytes, image_mime)
-        return
-    execute(
-        """
-        INSERT INTO daily_reports (technician, report_date, image_data, image_mime, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """,
-        (technician.strip(), report_date, psycopg2.Binary(image_bytes), image_mime),
+    object_key = upload_report_image(technician, report_date, image_bytes, image_mime)
+    try:
+        if existing:
+            update_daily_report(existing["id"], object_key, image_mime)
+        else:
+            execute(
+                """
+                INSERT INTO daily_reports (technician, report_date, image_data, image_mime, image_url, created_at, updated_at)
+                VALUES (%s, %s, NULL, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (technician.strip(), report_date, image_mime, object_key),
+            )
+    except Exception:
+        # A failed database write must not leave an unreferenced upload.
+        try:
+            delete_report_image(object_key)
+        except Exception:
+            LOGGER.exception("Could not remove an unreferenced report upload.")
+        raise
+
+    if existing and existing.get("image_url") and existing["image_url"] != object_key:
+        try:
+            delete_report_image(existing["image_url"])
+        except Exception:
+            # The new report is already safely committed. Keep serving it and
+            # record the cleanup failure for the scheduled orphan sweep.
+            LOGGER.exception("Could not remove the replaced report image.")
+    _invalidate_cache()
+
+
+def daily_report_display_source(report):
+    """Return a URL for new reports or bytes for legacy BYTEA reports."""
+    if report and report.get("image_url"):
+        return report_image_url(report["image_url"])
+    return report.get("image_data") if report else None
+
+
+# =========================================================
+# سجل العمليات (Audit Log) وسجل الأخطاء (Error Log)
+# =========================================================
+
+def log_action(username, action, details="", ip_address=""):
+    """تسجيل عملية في سجل العمليات. لا يُفشل أي عملية أساسية أبداً إذا تعذّر
+    تسجيلها؛ الأخطاء هنا تُبتلع بصمت بعد محاولة تسجيلها في error_log."""
+    try:
+        execute(
+            """
+            INSERT INTO audit_log (username, action, details, ip_address, created_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """,
+            ((username or "").strip(), action, (details or "").strip(), (ip_address or "").strip()),
+        )
+        get_audit_log.clear()
+    except Exception as exc:
+        log_error("AuditLogError", "database.py", "log_action", str(exc))
+
+
+@st.cache_data(ttl=SETTINGS.cache_ttl_operational_seconds, show_spinner=False)
+def get_audit_log(limit=500):
+    return fetch_all(
+        "SELECT id, username, action, details, ip_address, created_at FROM audit_log ORDER BY id DESC LIMIT %s",
+        (limit,),
     )
+
+
+def log_error(error_type, file_name, function_name, message):
+    """تسجيل خطأ في error_log. مُصمَّمة لعدم رفع أي استثناء بنفسها أبداً حتى
+    لا يتسبب فشل تسجيل الخطأ في كسر العملية الأصلية."""
+    try:
+        execute(
+            """
+            INSERT INTO error_log (error_type, file_name, function_name, message, created_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """,
+            ((error_type or "")[:200], (file_name or "")[:200], (function_name or "")[:200], (message or "")[:2000]),
+        )
+        get_error_log.clear()
+    except Exception:
+        pass
+
+
+@st.cache_data(ttl=SETTINGS.cache_ttl_operational_seconds, show_spinner=False)
+def get_error_log(limit=200):
+    return fetch_all(
+        "SELECT id, error_type, file_name, function_name, message, created_at FROM error_log ORDER BY id DESC LIMIT %s",
+        (limit,),
+    )
+
+
+# =========================================================
+# مركز المطور: إحصاءات النظام
+# =========================================================
+
+@st.cache_data(ttl=SETTINGS.cache_ttl_diagnostics_seconds, show_spinner=False)
+def get_system_counts():
+    """عدّادات خفيفة لكل الكيانات الرئيسية بقراءة واحدة مجمَّعة لكل جدول،
+    بدل تحميل كل الصفوف ثم عدّها في Python (أسرع ويبقى سريعاً مع نمو البيانات)."""
+    row = fetch_one(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM users) AS users,
+            (SELECT COUNT(*) FROM users WHERE role = 'admin') AS admins,
+            (SELECT COUNT(*) FROM users WHERE role = 'technician') AS technicians,
+            (SELECT COUNT(*) FROM tasks) AS tasks,
+            (SELECT COUNT(*) FROM assigned_tasks) AS assigned_tasks,
+            (SELECT COUNT(*) FROM daily_reports) AS reports,
+            (SELECT COUNT(*) FROM materials) AS materials,
+            (SELECT COUNT(*) FROM materials WHERE quantity <= 5) AS low_stock_materials
+        """
+    )
+    return dict(row)
+
+
+@st.cache_data(ttl=SETTINGS.cache_ttl_diagnostics_seconds, show_spinner=False)
+def get_tasks_breakdown():
+    """توزيع المهام حسب المدينة/الحالة/النوع، باستعلامات GROUP BY مجمَّعة
+    (لا تُحمَّل كل صفوف الجدول إلى Python)."""
+    return {
+        "by_city": fetch_all("SELECT COALESCE(NULLIF(city, ''), 'غير محدد') AS label, COUNT(*) AS n FROM tasks GROUP BY 1 ORDER BY 2 DESC"),
+        "by_status": fetch_all("SELECT task_status AS label, COUNT(*) AS n FROM tasks GROUP BY 1 ORDER BY 2 DESC"),
+        "by_type": fetch_all("SELECT task_type AS label, COUNT(*) AS n FROM tasks GROUP BY 1 ORDER BY 2 DESC"),
+    }
+
+
+def test_db_connection():
+    """اختبار اتصال حي بقاعدة البيانات مع قياس زمن الاستجابة الفعلي. غير
+    مخزَّن مؤقتاً عمداً لأنه يجب أن يعكس حالة الاتصال الآن بالضبط."""
+    started = time.perf_counter()
+    try:
+        fetch_one("SELECT 1 AS ok")
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        return {"connected": True, "response_ms": round(elapsed_ms, 1), "error": None}
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        return {"connected": False, "response_ms": round(elapsed_ms, 1), "error": str(exc)}
+
+
+@st.cache_data(ttl=SETTINGS.cache_ttl_reference_seconds, show_spinner=False)
+def get_database_info():
+    """حجم قاعدة البيانات وإصدار PostgreSQL وعدد الاتصالات النشطة حالياً،
+    من دوال PostgreSQL الرسمية الخفيفة الوزن (لا تفحص أي جدول بيانات)."""
+    try:
+        size_row = fetch_one("SELECT pg_size_pretty(pg_database_size(current_database())) AS size")
+        version_row = fetch_one("SHOW server_version")
+        connections_row = fetch_one(
+            "SELECT COUNT(*) AS n FROM pg_stat_activity WHERE datname = current_database()"
+        )
+        return {
+            "size": size_row["size"] if size_row else "غير متاح",
+            "version": version_row["server_version"] if version_row else "غير متاح",
+            "active_connections": connections_row["n"] if connections_row else None,
+        }
+    except Exception:
+        return {"size": "غير متاح", "version": "غير متاح", "active_connections": None}
+
+
+@st.cache_data(ttl=SETTINGS.cache_ttl_operational_seconds, show_spinner=False)
+def get_security_overview():
+    """نظرة أمنية سريعة لمركز المطور: حسابات مقفلة حالياً، حسابات عليها
+    محاولات دخول فاشلة، وآخر عمليات دخول (تُستخدم أيضاً كتقدير لعدد
+    المستخدمين المتصلين حالياً عبر آخر تسجيل دخول خلال 15 دقيقة)."""
+    now = datetime.datetime.now()
+    return {
+        "locked": fetch_all(
+            "SELECT username, fullname, locked_until FROM users WHERE locked_until IS NOT NULL AND locked_until > %s ORDER BY locked_until DESC",
+            (now,),
+        ),
+        "failed_attempts": fetch_all(
+            "SELECT username, fullname, failed_attempts FROM users WHERE failed_attempts > 0 ORDER BY failed_attempts DESC"
+        ),
+        "recent_logins": fetch_all(
+            "SELECT username, fullname, last_login FROM users WHERE last_login IS NOT NULL ORDER BY last_login DESC LIMIT 15"
+        ),
+        "online_now": fetch_all(
+            "SELECT username, fullname, last_login FROM users WHERE last_login IS NOT NULL AND last_login > %s ORDER BY last_login DESC",
+            (now - datetime.timedelta(minutes=SETTINGS.online_user_window_minutes),),
+        ),
+    }
+
+
+def cleanup_cache():
+    """مسح كل الكاش يدوياً من تبويب الصيانة بمركز المطور."""
     _invalidate_cache()
