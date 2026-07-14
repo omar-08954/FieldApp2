@@ -376,18 +376,10 @@ def assigned_task_dataframe(df):
     st.dataframe(display, hide_index=True, use_container_width=True)
 
 
-def date_selector(key_prefix, default=None):
-    """حقول اليوم/الشهر/السنة بنفس أسلوب باقي التطبيق (أعمدة + مربعات رقمية).
-    تُعيد كائن تاريخ (date) صحيحاً، أو None إذا كان التاريخ المدخل غير صالح."""
-    today = default or datetime.date.today()
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        day = st.number_input("اليوم", min_value=1, max_value=31, value=today.day, step=1, key=f"{key_prefix}_day")
-    with col2:
-        month = st.number_input("الشهر", min_value=1, max_value=12, value=today.month, step=1, key=f"{key_prefix}_month")
-    with col3:
-        year = st.number_input("السنة", min_value=2020, max_value=2100, value=today.year, step=1, key=f"{key_prefix}_year")
-    try:
-        return datetime.date(int(year), int(month), int(day))
-    except ValueError:
-        return None
+def date_selector(key_prefix, default=None, label="التاريخ"):
+    """مكوّن تقويم موحّد مطابق لمكوّن سجل العمليات في مركز المطور."""
+    return st.date_input(
+        label,
+        value=default or datetime.date.today(),
+        key=f"{key_prefix}_date_picker",
+    )

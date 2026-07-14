@@ -10,7 +10,9 @@ import bcrypt
 from psycopg2.extras import RealDictCursor, execute_values
 
 from database.storage import (
+    ReportImageNotFoundError,
     delete_report_image,
+    download_report_image,
     report_image_url,
     upload_report_image,
 )
@@ -41,6 +43,22 @@ TITLE_PREFIXES = ["المهندس", "مهندس", "م.", "الفني", "فني",
 def _clean_text(value):
     value = str(value or "").strip().lower()
     return re.sub(r"\s+", " ", value)
+
+
+def normalize_calendar_date(value):
+    """Normalize UI/date/string values to a timezone-free ``date`` object."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    text = str(value).strip().split("T", 1)[0].split(" ", 1)[0]
+    try:
+        year, month, day = (int(part) for part in text.split("-"))
+        return datetime.date(year, month, day)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid calendar date: {value!r}") from exc
 
 
 def _text_tokens(value):
@@ -164,10 +182,11 @@ def _invalidate_cache():
     get_all_tasks.clear()
     search_tasks.clear()
     _search_by_field.clear()
-    search_assigned_tasks.clear()
-    search_completed_tasks.clear()
+    _search_assigned_tasks_cached.clear()
+    _search_completed_tasks_cached.clear()
     daily_report_exists.clear()
     get_daily_report.clear()
+    get_daily_report_image_bytes.clear()
     get_system_counts.clear()
     get_tasks_breakdown.clear()
     get_security_overview.clear()
@@ -710,8 +729,7 @@ def add_task(technician, task_number, subscription_number, task_type, task_statu
     # اليوم/الشهر/السنة بالواجهة) بدل الاعتماد على CURRENT_DATE في قاعدة
     # البيانات، لتفادي أي فارق توقيت بين خادم القاعدة والتطبيق يمنع ظهور
     # المهمة في نفس اليوم داخل صفحة المهام اليومية.
-    if execution_date is None:
-        execution_date = datetime.date.today()
+    execution_date = normalize_calendar_date(execution_date) or datetime.date.today()
     execute(
         """
         INSERT INTO tasks (technician, task_number, subscription_number, task_type, task_status, city, notes, execution_date, created_at, updated_at)
@@ -987,8 +1005,7 @@ def assigned_task_number_exists(task_number):
 def assign_task(technician, task_number, subscription_number, assigned_date=None, task_type="تقني", task_status="عائق", city="", notes="", assigned_by=""):
     # المدير لم يعد يختار نوع/حالة/تاريخ المهمة، لذا لها قيم افتراضية معقولة
     # (نفس الافتراضات المستخدمة أصلاً عند استيراد Excel بدون هذه الأعمدة)
-    if assigned_date is None:
-        assigned_date = datetime.date.today()
+    assigned_date = normalize_calendar_date(assigned_date) or datetime.date.today()
     execute(
         """
         INSERT INTO assigned_tasks
@@ -1021,8 +1038,7 @@ def get_assigned_task_by_number(technician, task_number):
 def complete_assigned_task(assigned_id, subscription_number=None, task_type=None, task_status=None, notes=None, city=None, execution_date=None):
     """ينقل مهمة واحدة من جدول المهام المسندة إلى جدول المهام المنفذة بشكل ذري
     (بنفس الاتصال)، ويسجل تاريخ التنفيذ، حتى لا يختل تطابق الجدولين أبداً."""
-    if execution_date is None:
-        execution_date = datetime.date.today()
+    execution_date = normalize_calendar_date(execution_date) or datetime.date.today()
 
     def _action(conn):
         cur = conn.cursor()
@@ -1049,15 +1065,21 @@ def complete_assigned_task(assigned_id, subscription_number=None, task_type=None
         return True
 
     result = _with_connection(_action)
-    _invalidate_cache()
+    if result:
+        _invalidate_cache()
     return result
 
 
 @st.cache_data(ttl=SETTINGS.cache_ttl_search_seconds, show_spinner=False)
-def search_assigned_tasks(technician="", assigned_date=None):
+def _search_assigned_tasks_cached(technician, assigned_date):
     clauses, params = _assigned_task_filter_clause(technician, assigned_date)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return fetch_all(f"SELECT {ASSIGNED_COLUMNS} FROM assigned_tasks {where} ORDER BY id DESC", params)
+
+
+def search_assigned_tasks(technician="", assigned_date=None):
+    """Search assigned tasks using one normalized, timezone-free cache key."""
+    return _search_assigned_tasks_cached(technician, normalize_calendar_date(assigned_date))
 
 
 # اسم بديل مطلوب لنفس الوظيفة (عرض المهام المسندة حسب الفني/التاريخ)
@@ -1069,20 +1091,22 @@ get_assigned_tasks = search_assigned_tasks
 # =========================================================
 
 @st.cache_data(ttl=SETTINGS.cache_ttl_search_seconds, show_spinner=False)
-def search_completed_tasks(technician="", target_date=None):
+def _search_completed_tasks_cached(technician, target_date):
     clauses = []
     params = []
     if technician and technician != "الكل":
         clauses.append("technician = %s")
         params.append(technician)
     if target_date:
-        # الاعتماد الكامل على execution_date (تمت تعبئة السجلات القديمة عبر
-        # Migration في create_tables())، بلا أي حاجة لـ created_at، مما يسمح
-        # أيضاً باستخدام فهرس (technician, execution_date) مباشرة.
         clauses.append("execution_date = %s")
         params.append(target_date)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return fetch_all(f"SELECT {TASK_COLUMNS} FROM tasks {where} ORDER BY id DESC", params)
+
+
+def search_completed_tasks(technician="", target_date=None):
+    """Search completed tasks using one normalized, timezone-free cache key."""
+    return _search_completed_tasks_cached(technician, normalize_calendar_date(target_date))
 
 
 # اسم بديل مطلوب لنفس الوظيفة (عرض المهام المنفذة حسب الفني/التاريخ)
@@ -1120,7 +1144,7 @@ def get_daily_report(technician, report_date):
     return row
 
 
-def update_daily_report(report_id, image_url, image_mime):
+def update_daily_report(report_id, image_url, image_mime, invalidate_cache=True):
     execute(
         """
         UPDATE daily_reports
@@ -1129,7 +1153,8 @@ def update_daily_report(report_id, image_url, image_mime):
         """,
         (image_url, image_mime, int(report_id)),
     )
-    _invalidate_cache()
+    if invalidate_cache:
+        _invalidate_cache()
 
 
 def save_daily_report(technician, report_date, image_bytes, image_mime):
@@ -1141,7 +1166,7 @@ def save_daily_report(technician, report_date, image_bytes, image_mime):
     object_key = upload_report_image(technician, report_date, image_bytes, image_mime)
     try:
         if existing:
-            update_daily_report(existing["id"], object_key, image_mime)
+            update_daily_report(existing["id"], object_key, image_mime, invalidate_cache=False)
         else:
             execute(
                 """
@@ -1166,6 +1191,51 @@ def save_daily_report(technician, report_date, image_bytes, image_mime):
             # record the cleanup failure for the scheduled orphan sweep.
             LOGGER.exception("Could not remove the replaced report image.")
     _invalidate_cache()
+
+
+@st.cache_data(ttl=SETTINGS.cache_ttl_operational_seconds, show_spinner=False)
+def get_daily_report_image_bytes(object_key):
+    """Return the original Storage object bytes for a download button."""
+    return download_report_image(object_key)
+
+
+def daily_report_download_bytes(report):
+    """Return original bytes for both Storage-backed and legacy BYTEA reports."""
+    if not report:
+        return None
+    if report.get("image_url"):
+        return get_daily_report_image_bytes(report["image_url"])
+    return report.get("image_data")
+
+
+def delete_daily_report(report_id, object_key=None):
+    """Delete a report image and its database reference.
+
+    Storage is removed first. A missing Storage object is treated as a stale
+    reference and the database row is still removed. Other Storage failures
+    stop the operation so the database does not silently lose a valid link.
+    """
+    storage_was_missing = False
+    if object_key:
+        try:
+            delete_report_image(object_key)
+        except ReportImageNotFoundError:
+            storage_was_missing = True
+    def _delete_reference(conn):
+        cur = conn.cursor()
+        cur.execute("DELETE FROM daily_reports WHERE id = %s RETURNING id", (int(report_id),))
+        deleted = cur.fetchone() is not None
+        conn.commit()
+        cur.close()
+        return deleted
+
+    database_row_deleted = _with_connection(_delete_reference)
+    if database_row_deleted:
+        _invalidate_cache()
+    return {
+        "storage_was_missing": storage_was_missing,
+        "database_was_missing": not database_row_deleted,
+    }
 
 
 def daily_report_display_source(report):

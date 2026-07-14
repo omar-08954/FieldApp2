@@ -18,7 +18,11 @@ class StorageConfigurationError(RuntimeError):
 
 
 class StorageOperationError(RuntimeError):
-    """Raised when Supabase rejects an upload or deletion request."""
+    """Raised when Supabase rejects an upload, download, or deletion request."""
+
+
+class ReportImageNotFoundError(StorageOperationError):
+    """Raised when the requested report image does not exist in Storage."""
 
 
 def validate_report_image(image_bytes: bytes, image_mime: str) -> bool:
@@ -48,7 +52,11 @@ def _request(url: str, method: str, headers: dict[str, str], data: bytes | None 
     try:
         with urlopen(request, timeout=30) as response:  # nosec B310 - endpoint comes from trusted secrets
             return response.read()
-    except (HTTPError, URLError, TimeoutError) as exc:
+    except HTTPError as exc:
+        if exc.code == 404:
+            raise ReportImageNotFoundError("Report image was not found in Supabase Storage.") from exc
+        raise StorageOperationError(f"Supabase Storage request failed with HTTP {exc.code}.") from exc
+    except (URLError, TimeoutError) as exc:
         raise StorageOperationError("Supabase Storage request failed.") from exc
 
 
@@ -75,14 +83,26 @@ def upload_report_image(technician: str, report_date: object, image_bytes: bytes
 
 
 def report_image_url(object_key: str) -> str:
-    """Return the public URL for a stored report object.
-
-    The bucket must be configured as private or public according to the
-    deployment's access policy. Private buckets should be served through a
-    signed-URL endpoint in a future authenticated backend deployment.
-    """
+    """Return the public URL for a stored report object."""
     base_url, _, bucket = _settings()
     return f"{base_url}/storage/v1/object/public/{quote(bucket, safe='')}/{quote(object_key, safe='/')}"
+
+
+def download_report_image(object_key: str) -> bytes:
+    """Download the original object using the service credential.
+
+    This works for both public and private buckets and avoids relying on the
+    browser-visible public URL when preparing the Streamlit download button.
+    """
+    if not object_key:
+        raise ReportImageNotFoundError("No report image key was provided.")
+    base_url, service_key, bucket = _settings()
+    encoded_key = quote(object_key, safe="/")
+    return _request(
+        f"{base_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_key}",
+        "GET",
+        {"Authorization": f"Bearer {service_key}", "apikey": service_key},
+    )
 
 
 def delete_report_image(object_key: str | None) -> None:
