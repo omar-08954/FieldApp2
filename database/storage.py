@@ -13,6 +13,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from logging_config import get_logger
+
+LOGGER = get_logger(__name__)
+
+
 class StorageConfigurationError(RuntimeError):
     """Raised when the required Supabase storage secrets are not configured."""
 
@@ -53,11 +58,63 @@ def _request(url: str, method: str, headers: dict[str, str], data: bytes | None 
         with urlopen(request, timeout=30) as response:  # nosec B310 - endpoint comes from trusted secrets
             return response.read()
     except HTTPError as exc:
+        # Supabase always sends a JSON body describing the real reason for a
+        # failed request (e.g. "Duplicate", "InvalidKey", "Bucket not
+        # found", "InvalidJWT" ...). urllib does not expose this body via
+        # str(exc), so without reading it explicitly the original cause is
+        # completely lost and only a bare HTTP status code remains. Read and
+        # log it in full here so the true cause is always available, even
+        # though the Streamlit UI intentionally keeps showing a generic,
+        # user-friendly message.
+        try:
+            detail = exc.read().decode("utf-8", errors="replace").strip()
+        except Exception:  # pragma: no cover - body already consumed/unavailable
+            detail = ""
+        LOGGER.error(
+            "Supabase Storage request failed: %s %s -> HTTP %s. Supabase response: %s",
+            method,
+            url,
+            exc.code,
+            detail or "<no response body>",
+        )
         if exc.code == 404:
             raise ReportImageNotFoundError("Report image was not found in Supabase Storage.") from exc
-        raise StorageOperationError(f"Supabase Storage request failed with HTTP {exc.code}.") from exc
+        message = f"Supabase Storage request failed with HTTP {exc.code}."
+        if detail:
+            message = f"{message} Supabase response: {detail}"
+        raise StorageOperationError(message) from exc
     except (URLError, TimeoutError) as exc:
-        raise StorageOperationError("Supabase Storage request failed.") from exc
+        LOGGER.error("Supabase Storage request failed: %s %s -> %s", method, url, exc)
+        raise StorageOperationError(f"Supabase Storage request failed: {exc}") from exc
+
+
+def _sanitize_path_segment(value: object) -> str:
+    """Make a raw value safe to use as a single path *segment* of an object
+    key: trims it and removes the "/" separator so it cannot introduce an
+    extra path segment or escape the intended folder.
+
+    Non-ASCII characters (e.g. Arabic technician names) are deliberately
+    left untouched here. They are percent-encoded exactly once, at the
+    point the HTTP request URL is built in `_object_url`. Encoding them
+    here as well would double-encode the value (e.g. "%D8%A3" would itself
+    get encoded into "%25D8%25A3"), producing a mismatched/invalid key on
+    Supabase's side and causing storage requests to fail.
+    """
+    cleaned = str(value or "").strip()
+    return cleaned.replace("/", "-").replace("\\", "-")
+
+
+def _object_url(base_url: str, bucket: str, object_key: str) -> str:
+    """Build the Supabase Storage REST URL for an object key.
+
+    `object_key` must always be the raw, human-readable key exactly as
+    returned by `upload_report_image` and stored in PostgreSQL - it must be
+    percent-encoded exactly once, here, and nowhere else. This single
+    encoding point is what `upload_report_image`, `download_report_image`,
+    `delete_report_image` and `report_image_url` all share, so the same key
+    always resolves to the exact same Supabase object.
+    """
+    return f"{base_url}/storage/v1/object/{quote(bucket, safe='')}/{quote(object_key, safe='/')}"
 
 
 def upload_report_image(technician: str, report_date: object, image_bytes: bytes, image_mime: str) -> str:
@@ -65,17 +122,24 @@ def upload_report_image(technician: str, report_date: object, image_bytes: bytes
     base_url, service_key, bucket = _settings()
     extension = mimetypes.guess_extension(image_mime or "") or ".jpg"
     digest = hashlib.sha256(image_bytes).hexdigest()[:16]
-    safe_technician = quote(str(technician).strip(), safe="")
+    safe_technician = _sanitize_path_segment(technician)
     object_key = f"daily-reports/{safe_technician}/{report_date}-{digest}{extension}"
-    encoded_key = quote(object_key, safe="/")
     _request(
-        f"{base_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_key}",
+        _object_url(base_url, bucket, object_key),
         "POST",
         {
             "Authorization": f"Bearer {service_key}",
             "apikey": service_key,
             "Content-Type": image_mime or "image/jpeg",
-            "x-upsert": "false",
+            # The object key embeds a sha256 digest of the exact bytes being
+            # uploaded, so two different requests can only ever collide on
+            # the same key when they carry byte-identical content (e.g. the
+            # same photo re-uploaded, or a retry after a dropped response).
+            # Rejecting that re-upload with "already exists" (x-upsert:
+            # false) is what previously surfaced as HTTP 400 on a plain
+            # re-save. Since a same-key request is always the same file,
+            # allowing the upsert is safe and makes the upload idempotent.
+            "x-upsert": "true",
         },
         image_bytes,
     )
@@ -97,9 +161,8 @@ def download_report_image(object_key: str) -> bytes:
     if not object_key:
         raise ReportImageNotFoundError("No report image key was provided.")
     base_url, service_key, bucket = _settings()
-    encoded_key = quote(object_key, safe="/")
     return _request(
-        f"{base_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_key}",
+        _object_url(base_url, bucket, object_key),
         "GET",
         {"Authorization": f"Bearer {service_key}", "apikey": service_key},
     )
@@ -109,9 +172,8 @@ def delete_report_image(object_key: str | None) -> None:
     if not object_key:
         return
     base_url, service_key, bucket = _settings()
-    encoded_key = quote(object_key, safe="/")
     _request(
-        f"{base_url}/storage/v1/object/{quote(bucket, safe='')}/{encoded_key}",
+        _object_url(base_url, bucket, object_key),
         "DELETE",
         {"Authorization": f"Bearer {service_key}", "apikey": service_key},
     )

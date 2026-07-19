@@ -219,24 +219,69 @@ def resolve_column_mapping(columns, dataframe=None, threshold=0.8):
     recognized but its actual values match a known set (e.g. a column
     named "الإفادة" containing only "تقني"/"زيرا"), it is still mapped
     based on that content.
+
+    The mapping returned here is always a strict one-to-one relationship:
+    every canonical target name is used *at most once*, and every source
+    column is mapped to *at most one* target. This is enforced explicitly
+    (see the conflict-resolution step below) so that two differently
+    spelled columns (e.g. "الفني" and "اسم الفني", both synonyms of the
+    same target) can never both be renamed to the same canonical name.
+    Without this guarantee, ``DataFrame.rename(columns=mapping)`` would
+    silently produce duplicate column labels, which later breaks anything
+    that requires unique columns (e.g. Streamlit's Arrow-based table
+    rendering, which fails with "Duplicate column names found").
     """
-    mapping = {}
-    used_targets = set()
+    columns = list(columns)
+
+    # الخطوة ١: لكل عمود مصدر، أوجد أفضل هدف مرشح له وأعلى درجة تطابق
+    # (سلوك المطابقة نفسه كما كان)، لكن دون ترشيحه نهائياً بعد — قد يتنافس
+    # أكثر من عمود على نفس الهدف.
+    candidates = []  # [(score, column, target), ...]
     for column in columns:
         column_norm = _clean_text(column)
         best_target, best_score = None, 0.0
         for target, synonyms in COLUMN_SYNONYMS.items():
+            target_norm = _clean_text(target)
             for synonym in synonyms:
                 synonym_norm = _clean_text(synonym)
-                score = 1.0 if column_norm == synonym_norm else _fuzzy_ratio(column_norm, synonym_norm)
+                if column_norm == target_norm:
+                    # المرتبة الأولى: العمود مُسمّى فعلاً بنفس الاسم القياسي
+                    # للهدف (وليس أحد مرادفاته فقط). هذا أقوى دليل ممكن على
+                    # أن هذا هو العمود الصحيح لهذا الهدف تحديداً، فيجب أن
+                    # يتفوّق دائماً على عمود آخر يطابق أحد المرادفات فقط.
+                    score = 1.0
+                elif column_norm == synonym_norm:
+                    # المرتبة الثانية: تطابق حرفي مع أحد المرادفات (وليس
+                    # الاسم القياسي نفسه). قد يتنافس عمودان مختلفان على نفس
+                    # الهدف بهذه الطريقة (كلاهما مرادف حرفي)، ويُحسم ذلك
+                    # لاحقاً بالترتيب الحتمي في خطوة حل التعارضات.
+                    score = 0.999
+                else:
+                    # المرتبة الثالثة: تطابق تقريبي فقط، ويجب ألا يساوي أو
+                    # يتجاوز أي تطابق حرفي أعلاه مهما كانت درجته.
+                    score = min(_fuzzy_ratio(column_norm, synonym_norm), 0.99)
                 if score > best_score:
                     best_target, best_score = target, score
             if best_score == 1.0:
                 break
         if best_target and best_score >= threshold:
-            mapping[column] = best_target
-            used_targets.add(best_target)
+            candidates.append((best_score, column, best_target))
 
+    # الخطوة ٢: حلّ التعارضات بشكل عام. إذا تنافس أكثر من عمود مصدر على
+    # نفس الهدف، يفوز صاحب أعلى درجة تطابق فقط، والباقي يبقى بدون تعيين
+    # (يحتفظ باسمه الأصلي) بدل إنتاج هدف مكرر. الترتيب مستقر، فعند تساوي
+    # الدرجات يفوز العمود الذي يظهر أولاً في الملف — نتيجة حتمية وقابلة
+    # للتكرار.
+    mapping = {}
+    used_targets = set()
+    for score, column, target in sorted(candidates, key=lambda item: item[0], reverse=True):
+        if column in mapping or target in used_targets:
+            continue
+        mapping[column] = target
+        used_targets.add(target)
+
+    # الخطوة ٣: الأعمدة التي لم تُحسم بالاسم تُفحص بمحتواها، مع الالتزام
+    # بنفس القاعدة: كل هدف يُستخدم مرة واحدة كحد أقصى.
     if dataframe is not None:
         for column in columns:
             if column in mapping:
