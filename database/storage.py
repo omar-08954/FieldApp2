@@ -53,9 +53,10 @@ def _request(url: str, method: str, headers: dict[str, str], data: bytes | None 
         with urlopen(request, timeout=30) as response:  # nosec B310 - endpoint comes from trusted secrets
             return response.read()
     except HTTPError as exc:
-        if exc.code == 404:
-            raise ReportImageNotFoundError("Report image was not found in Supabase Storage.") from exc
-        raise StorageOperationError(f"Supabase Storage request failed with HTTP {exc.code}.") from exc
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise StorageOperationError(
+        f"HTTP {exc.code}: {body}"
+        from exc
     except (URLError, TimeoutError) as exc:
         raise StorageOperationError("Supabase Storage request failed.") from exc
 
