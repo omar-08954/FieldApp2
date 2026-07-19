@@ -58,6 +58,7 @@ from database.database import (
     delete_tasks,
     update_user
 )
+from database.excel_importer import import_excel, ImportReport
 from database.storage import ReportImageNotFoundError, StorageConfigurationError, StorageOperationError, validate_report_image
 from config import SETTINGS
 from logging_config import get_logger
@@ -625,61 +626,93 @@ def admin_page():
                 if len(incoming) > 20000:
                     st.error(f"❌ الملف يحتوي على {len(incoming)} صف، والحد الأقصى المسموح به لكل استيراد هو 20,000 صف. يرجى تقسيم الملف.")
                     incoming = incoming.iloc[0:0]
-                # مطابقة أسماء الأعمدة تلقائياً (بالاسم أو بمحتوى العمود) حتى لو اختلفت عن الأسماء المتوقعة
-                column_map = resolve_column_mapping(incoming.columns, incoming)
-                if column_map:
-                    incoming = incoming.rename(columns=column_map)
-                columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in incoming.columns]
-                st.dataframe(incoming[columns].head(20), hide_index=True, use_container_width=True)
-                if st.button("بدء الاستيراد", use_container_width=True):
-                    added = duplicated = 0
-                    with timed_spinner("جاري استيراد البيانات..."):
-                        # استخدام البيانات المجلوبة بالفعل بدل تكرار الاستعلام عن كل رقم مهمة
-                        existing_numbers = set(df["task_number"].astype(str)) if not df.empty else set()
-                        technicians_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city", "created_at"])
-                        if not technicians_df.empty:
-                            technicians_only = technicians_df[technicians_df["role"] == "technician"]
-                            technician_names = technicians_only["fullname"].tolist()
-                            technician_city_map = {
-                                row["fullname"]: (row.get("city") or "") for _, row in technicians_only.iterrows()
-                            }
-                        else:
-                            technician_names, technician_city_map = [], {}
 
-                        rows_to_insert = []
-                        today = datetime.date.today()
-                        for _, row in incoming.iterrows():
-                            number = str(row.get("رقم المهمة", "")).strip()
-                            if not number or number in existing_numbers:
-                                duplicated += 1
-                                continue
-                            raw_technician = str(row.get("الفني", "")).strip() or "غير محدد"
-                            # مطابقة تقريبية (Fuzzy) لاسم الفني مع الفنيين الموجودين بالفعل
-                            resolved_technician = resolve_known_technician(raw_technician, technician_names)
-                            # إذا تم التعرف على الفني، تُستخدم مدينته من قاعدة البيانات دائماً
-                            # (حتى لو كانت فارغة) وليس من ملف Excel
-                            if resolved_technician in technician_city_map:
-                                resolved_city = technician_city_map[resolved_technician]
-                            else:
-                                resolved_city = str(row.get("المدينة", "")).strip()
-                            rows_to_insert.append((
-                                resolved_technician,
-                                number,
-                                str(row.get("رقم الاشتراك", "")).strip(),
-                                str(row.get("نوع المهمة", "تقني")).strip(),
-                                str(row.get("حالة المهمة", "عائق")).strip(),
-                                resolved_city,
-                                str(row.get("الملاحظات", "")).strip(),
-                                today,
-                            ))
-                            existing_numbers.add(number)
-                            added += 1
-                        # إدراج جماعي بدل استعلام لكل صف على حدة (أسرع بكثير للملفات الكبيرة)
-                        bulk_add_tasks(rows_to_insert)
-                        if added:
-                            log_action(st.session_state.fullname, "استيراد مهام", f"عدد: {added}, مكرر: {duplicated}")
-                    st.success(f"✅ تمت إضافة {added} مهمة، وتجاهل {duplicated} مهمة مكررة.")
-                    st.rerun()
+                # --- معاينة الأعمدة المكتشفة ---
+                from database.excel_importer import resolve_column_mapping as _rcm
+                preview_map = _rcm(incoming.columns.tolist(), incoming)
+                if preview_map:
+                    with st.expander("🔍 خريطة الأعمدة المكتشفة تلقائياً", expanded=False):
+                        map_rows = [{"عمود الملف": k, "اسم قياسي": v} for k, v in preview_map.items()]
+                        st.dataframe(pd.DataFrame(map_rows), hide_index=True, use_container_width=True)
+                    preview_df = incoming.rename(columns=preview_map)
+                else:
+                    preview_df = incoming
+                preview_cols = [c for c in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if c in preview_df.columns]
+                st.dataframe(preview_df[preview_cols].head(20) if preview_cols else preview_df.head(20), hide_index=True, use_container_width=True)
+
+                if st.button("بدء الاستيراد", use_container_width=True):
+                    with timed_spinner("جاري استيراد البيانات..."):
+                        # جلب الفنيين والمهام الموجودة
+                        users_all = get_all_users()
+                        technicians_only = [
+                            {"fullname": u["fullname"], "city": u.get("city") or ""}
+                            for u in (users_all or [])
+                            if u.get("role") == "technician"
+                        ]
+                        existing_tasks_list = [
+                            {"technician": r["technician"], "task_number": r["task_number"],
+                             "subscription_number": r["subscription_number"], "task_type": r["task_type"],
+                             "task_status": r["task_status"], "city": r.get("city") or ""}
+                            for r in (search_tasks() or [])
+                        ]
+
+                        rows_to_insert, report = import_excel(
+                            incoming,
+                            known_technicians=technicians_only,
+                            existing_tasks=existing_tasks_list,
+                            execution_date=datetime.date.today(),
+                        )
+
+                        if rows_to_insert:
+                            bulk_add_tasks(rows_to_insert)
+                            log_action(
+                                st.session_state.fullname,
+                                "استيراد مهام",
+                                f"مستورد: {report.imported}, مكرر: {report.duplicated}, أخطاء: {report.error_count}",
+                            )
+
+                    # --- التقرير النهائي الاحترافي ---
+                    st.divider()
+                    st.subheader("📊 تقرير الاستيراد")
+                    elapsed_str = f"{report.elapsed_seconds:.2f} ثانية"
+                    match_rate_str = f"{report.match_success_rate * 100:.1f}%"
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("إجمالي الصفوف المقروءة", report.total_read)
+                    m2.metric("✅ مستورد بنجاح", report.imported)
+                    m3.metric("⚠️ مكرر (تجاهل)", report.duplicated)
+                    m4.metric("❌ أخطاء", report.error_count)
+
+                    m5, m6, m7, m8 = st.columns(4)
+                    m5.metric("فنيون معروفون", report.recognized_technician_count)
+                    m6.metric("فنيون غير معروفين", report.unknown_technician_count)
+                    m7.metric("نسبة نجاح المطابقة", match_rate_str)
+                    m8.metric("⏱ زمن الاستيراد", elapsed_str)
+
+                    if report.imported > 0:
+                        st.success(f"✅ تمت إضافة {report.imported} مهمة بنجاح.")
+
+                    # --- تفاصيل الفنيين غير المعروفين ---
+                    if report.unknown_technicians:
+                        with st.expander(f"⚠️ فنيون غير معروفين ({report.unknown_technician_count})", expanded=True):
+                            unknown_df = pd.DataFrame([
+                                {"الصف": u["row"], "الاسم الخام": u["raw_name"], "السبب": u["warning"],
+                                 "المرشحون": ", ".join(u["candidates"]) if u["candidates"] else "لا يوجد"}
+                                for u in report.unknown_technicians
+                            ])
+                            st.dataframe(unknown_df, hide_index=True, use_container_width=True)
+
+                    # --- تفاصيل الأخطاء ---
+                    if report.errors:
+                        with st.expander(f"❌ تفاصيل الأخطاء ({report.error_count})", expanded=False):
+                            errors_df = pd.DataFrame([
+                                {"رقم الصف": e.row_index, "سبب الرفض": e.reason, "طريقة الإصلاح": e.suggestion}
+                                for e in report.errors
+                            ])
+                            st.dataframe(errors_df, hide_index=True, use_container_width=True)
+
+                    if report.imported > 0:
+                        st.rerun()
         with col2:
             st.subheader("📤 تصدير Excel")
             export_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES, key="export_task_type")

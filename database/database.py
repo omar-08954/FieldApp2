@@ -11,10 +11,22 @@ from psycopg2.extras import RealDictCursor, execute_values
 
 from database.storage import (
     ReportImageNotFoundError,
+    build_object_key,
     delete_report_image,
     download_report_image,
     report_image_url,
     upload_report_image,
+)
+from database.excel_importer import (
+    ImportReport,
+    RowError,
+    build_existing_keys,
+    import_excel,
+    match_technician,
+    normalize_task_type,
+    normalize_task_status,
+    resolve_column_mapping,
+    TechnicianMatchResult,
 )
 from config import SETTINGS
 from logging_config import get_logger
@@ -78,11 +90,11 @@ def _normalize_person_name(name):
 
 def resolve_known_technician(raw_name, known_names, threshold=0.85):
     """Fuzzy-match an imported technician name against the list of
-    technician names already known to the system, so near-identical
-    spellings ("هاني" / "هاني صلاح" / "م. هاني صلاح" / مسافات إضافية /
-    اختلاف بسيط في الكتابة) resolve to the same existing technician
-    instead of creating a new distinct name. If nothing matches well
-    enough, the original name is returned as-is.
+    technician names already known to the system.
+
+    .. deprecated::
+        استخدم ``database.excel_importer.match_technician`` بدلاً من هذه الدالة
+        في أي كود جديد. هذه الدالة محفوظة للتوافق مع الكود القائم فقط.
     """
     raw_name = str(raw_name or "").strip()
     if not raw_name:
@@ -1285,12 +1297,23 @@ def update_daily_report(report_id, image_url, image_mime, invalidate_cache=True)
 
 
 def save_daily_report(technician, report_date, image_bytes, image_mime):
-    """إضافة تقرير جديد، أو استبدال التقرير الموجود لنفس الفني ونفس التاريخ (تقرير واحد فقط لكل يوم)."""
+    """إضافة تقرير جديد، أو استبدال التقرير الموجود لنفس الفني ونفس التاريخ (تقرير واحد فقط لكل يوم).
+
+    يستخدم technician_id (المعرف الرقمي من جدول users) لبناء Object Key آمن
+    بدلاً من اسم الفني، لضمان التوافق الكامل مع Supabase Storage بغض النظر
+    عن لغة الاسم أو وجود مسافات أو رموز خاصة.
+    """
     existing = fetch_one(
         "SELECT id, image_url FROM daily_reports WHERE technician = %s AND report_date = %s",
         (technician.strip(), report_date),
     )
-    object_key = upload_report_image(technician, report_date, image_bytes, image_mime)
+    # جلب معرف الفني الرقمي لبناء Object Key آمن
+    user_row = fetch_one(
+        "SELECT id FROM users WHERE fullname = %s",
+        (technician.strip(),),
+    )
+    technician_id = user_row["id"] if user_row else technician.strip()
+    object_key = upload_report_image(technician_id, report_date, image_bytes, image_mime)
     try:
         if existing:
             update_daily_report(existing["id"], object_key, image_mime, invalidate_cache=False)
