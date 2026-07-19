@@ -100,6 +100,88 @@ def resolve_known_technician(raw_name, known_names, threshold=0.85):
     return best_name if best_score >= threshold else raw_name
 
 
+def normalize_import_task_type(value):
+    """قيمة نوع المهمة أثناء الاستيراد: فارغة/غير موجودة/غير معروفة تصبح
+    تلقائياً "تقني" ولا تُعتبر خطأ يوقف الاستيراد."""
+    cleaned = _clean_text(value)
+    for known in TASK_TYPE_VALUES:
+        if cleaned == _clean_text(known):
+            return known
+    return "تقني"
+
+
+def normalize_import_task_status(value):
+    """قيمة حالة المهمة أثناء الاستيراد: فارغة/غير موجودة/غير معروفة تصبح
+    تلقائياً "تم الفحص" ولا توقف عملية الاستيراد."""
+    cleaned = _clean_text(value)
+    for known in TASK_STATUS_VALUES:
+        if cleaned == _clean_text(known):
+            return known
+    return "تم الفحص"
+
+
+def match_import_technician(raw_name, known_names):
+    """مطابقة ذكية لاسم الفني أثناء الاستيراد من Excel.
+
+    القواعد:
+    - تجاهل حالة الأحرف، والمسافات الزائدة أو المكررة.
+    - المطابقة تتم أولاً على الكلمة الأولى (الاسم الأول).
+    - إذا تطابقت الكلمة الأولى مع أكثر من فني معروف، تُستخدم الكلمة
+      الثانية للفصل بينهم.
+    - إذا تعذّر الفصل حتى بعد مقارنة الكلمة الثانية، تُعتبر الحالة غامضة:
+      يُعاد (None, رسالة_تحذير) ليتم تجاوز هذا السطر فقط دون إيقاف
+      الاستيراد بالكامل.
+    - إذا لم يبدأ أي اسم معروف بنفس الكلمة الأولى، يُستخدم أسلوب المطابقة
+      التقريبية العام (نفس resolve_known_technician) كحل احتياطي، ويُعاد
+      الاسم كما هو إن لم يوجد تطابق كافٍ.
+
+    Returns: (resolved_name_or_None, warning_or_None)
+    """
+    raw_name = str(raw_name or "").strip()
+    if not raw_name:
+        return raw_name, None
+
+    raw_tokens = _text_tokens(_normalize_person_name(raw_name))
+    if not raw_tokens:
+        return raw_name, None
+
+    first_token = raw_tokens[0]
+    known_by_first_token = []
+    for known in known_names:
+        known = str(known or "").strip()
+        if not known:
+            continue
+        known_tokens = _text_tokens(_normalize_person_name(known))
+        if not known_tokens:
+            continue
+        if known_tokens[0] == first_token or SequenceMatcher(None, known_tokens[0], first_token).ratio() >= 0.85:
+            known_by_first_token.append((known, known_tokens))
+
+    if not known_by_first_token:
+        # لا يوجد اسم معروف يبدأ بنفس الكلمة الأولى: استخدم المطابقة
+        # التقريبية العامة كحل احتياطي (سلوك سابق، بدون تغيير).
+        return resolve_known_technician(raw_name, known_names), None
+
+    if len(known_by_first_token) == 1:
+        return known_by_first_token[0][0], None
+
+    # أكثر من فني بنفس الاسم الأول: قارن الكلمة الثانية للفصل بينهم.
+    if len(raw_tokens) >= 2:
+        second_token = raw_tokens[1]
+        narrowed = [
+            candidate for candidate in known_by_first_token
+            if len(candidate[1]) >= 2
+            and (candidate[1][1] == second_token or SequenceMatcher(None, candidate[1][1], second_token).ratio() >= 0.85)
+        ]
+        if len(narrowed) == 1:
+            return narrowed[0][0], None
+
+    # تعذّر الفصل بينهم حتى بعد مقارنة الكلمة الثانية: حالة غامضة.
+    candidate_names = "، ".join(candidate[0] for candidate in known_by_first_token)
+    warning = f"تعذر تحديد الفني \"{raw_name}\" بدقة (احتمالات متعددة: {candidate_names}) — تم تجاوز هذا السطر."
+    return None, warning
+
+
 COLUMN_SYNONYMS = {
     "الفني": ["الفني", "اسم الفني", "الموظف", "technician", "employee", "engineer"],
     "رقم المهمة": ["رقم المهمة", "المهمة", "task number", "task", "رقم أمر العمل", "work order", "order number"],

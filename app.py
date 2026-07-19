@@ -45,8 +45,10 @@ from database.database import (
     log_error,
     login_user,
     material_exists,
+    match_import_technician,
+    normalize_import_task_status,
+    normalize_import_task_type,
     resolve_column_mapping,
-    resolve_known_technician,
     save_daily_report,
     search_assigned_tasks,
     search_completed_tasks,
@@ -146,7 +148,6 @@ def home_screen():
         cards = [
             ("📊 لوحة التحكم", "dashboard"),
             ("👔 لوحة المدير", "admin"),
-            ("🛠️ صفحة الفني", "technician"),
             ("📑 صفحة التقارير", "reports"),
             ("📦 المستودع", "inventory"),
             ("👥 إدارة المستخدمين", "users"),
@@ -156,8 +157,6 @@ def home_screen():
     else:
         cards = [
             ("🛠️ صفحة الفني", "technician"),
-            ("📋 المهام المسندة", "assigned_tasks"),
-            ("📅 المهام اليومية", "daily_tasks"),
             ("🔑 تغيير كلمة المرور", "change_password"),
         ]
 
@@ -195,17 +194,28 @@ def dashboard_page():
         col.metric(status, int(status_counts.get(status, 0)))
 
     st.divider()
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        technician = st.selectbox("الفني", ["الكل"] + sorted(df["technician"].dropna().unique().tolist()))
-    with col2:
-        task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES)
-    with col3:
-        task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES)
-    keyword = st.text_input("بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها")
+    with st.form("dashboard_filter_form"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            technician = st.selectbox("الفني", ["الكل"] + sorted(df["technician"].dropna().unique().tolist()))
+        with col2:
+            task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES)
+        with col3:
+            task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES)
+        keyword = st.text_input("بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها")
+        search_submitted = st.form_submit_button("🔍 بحث")
 
-    with timed_spinner("جاري البحث عن المهمة..."):
-        filtered = as_df(search_tasks(keyword, technician, task_type, task_status))
+    query_key = (keyword, technician, task_type, task_status)
+    if search_submitted:
+        with timed_spinner("جاري البحث عن المهمة..."):
+            st.session_state["dashboard_filter_results"] = search_tasks(keyword, technician, task_type, task_status)
+        st.session_state["dashboard_filter_query"] = query_key
+    elif "dashboard_filter_query" not in st.session_state:
+        # أول ظهور للصفحة: نعرض كل المهام قبل أي بحث، دون تنفيذ استعلام إضافي
+        st.session_state["dashboard_filter_results"] = df.to_dict("records")
+        st.session_state["dashboard_filter_query"] = query_key
+
+    filtered = as_df(st.session_state.get("dashboard_filter_results", []))
 
     st.subheader("📈 أداء الفنيين")
     st.bar_chart(df.groupby("technician").size().reset_index(name="عدد المهام").set_index("technician"))
@@ -213,13 +223,8 @@ def dashboard_page():
     task_dataframe(filtered)
 
 
-def technician_page():
-    require_login(["admin", "technician"])
-    top_nav()
-    page_header("🛠️ صفحة الفني", "تسجيل المهام اليومية بسرعة وبدون تكرار رقم المهمة.")
-
+def _technician_task_entry_tab():
     my_city = st.session_state.get("city") or ""
-
     if my_city:
         st.caption(f"المدينة المسجلة لحسابك: {my_city}")
     with st.form("task_form", clear_on_submit=True):
@@ -273,9 +278,63 @@ def technician_page():
                 st.success("✅ تم حفظ المهمة بنجاح.")
 
 
+def technician_page():
+    """صفحة الفني الوحيدة، بثلاث تبويبات فقط: المهام المسندة، المهام
+    اليومية (تسجيل مهمة جديدة + عرض المهام المنفذة)، وإضافة تقرير."""
+    require_login(["admin", "technician"])
+    top_nav()
+    page_header("🛠️ صفحة الفني", "المهام المسندة، المهام اليومية، وإضافة التقارير من مكان واحد.")
+
+    tab_add, tab_assigned, tab_daily, tab_report = st.tabs(["➕ إضافة مهمة", "📋 المهام المسندة", "📅 المهام اليومية", "📷 إضافة تقرير"])
+
+    with tab_assigned:
+        _assigned_tasks_admin_view(st.session_state.fullname, "tech_assigned_tasks")
+
+    with tab_add:
+        st.subheader("➕ تسجيل مهمة جديدة")
+        _technician_task_entry_tab()
+
+    with tab_daily:
+        st.subheader("✅ المهام المنفذة")
+        _completed_tasks_view(
+        st.session_state.fullname,
+        "tech_daily_completed"
+    )
+
+    with tab_report:
+        uploaded_report = st.file_uploader("📷 رفع صورة التقرير", type=["jpg", "jpeg", "png"], key="tech_report_uploader")
+        if uploaded_report is not None:
+            image_bytes = uploaded_report.getvalue()
+            if uploaded_report.size > SETTINGS.max_upload_bytes:
+                st.error("❌ حجم الصورة كبير جداً (الحد الأقصى 5 ميجابايت).")
+            elif not validate_report_image(image_bytes, uploaded_report.type or ""):
+                st.error("Invalid report image. Upload a valid JPEG or PNG file.")
+            else:
+                report_date = date_selector("tech_report_date", label="تاريخ التقرير")
+                if report_date is not None and daily_report_exists(st.session_state.fullname, report_date):
+                    st.info("⚠️ يوجد تقرير محفوظ مسبقاً لهذا التاريخ، وسيتم استبداله عند الحفظ.")
+
+                if st.button("💾 حفظ التقرير", key="tech_report_save_btn", use_container_width=True):
+                    if report_date is None:
+                        st.error("تاريخ غير صحيح.")
+                    else:
+                        with timed_spinner("💾 جاري حفظ المهمة..."):
+                            save_daily_report(
+                                st.session_state.fullname,
+                                report_date,
+                                image_bytes,
+                                uploaded_report.type or "image/jpeg",
+                            )
+                            log_action(st.session_state.fullname, "رفع تقرير", f"التاريخ: {report_date}")
+                        st.success("✅ تم حفظ المهمة بنجاح.")
+                        st.rerun()
+
+
 def select_task_from_search(state_prefix, title):
-    keyword = st.text_input(title, key=f"{state_prefix}_keyword")
-    if st.button("🔍 البحث", key=f"{state_prefix}_search_btn", use_container_width=True):
+    with st.form(f"{state_prefix}_search_form"):
+        keyword = st.text_input(title, key=f"{state_prefix}_keyword")
+        search_clicked = st.form_submit_button("🔍 البحث")
+    if search_clicked:
         if not keyword.strip():
             st.warning("يرجى إدخال قيمة للبحث.")
         else:
@@ -349,13 +408,6 @@ def _assign_task_view(technicians_df):
                 st.error("❌ لا يمكن إضافة نفس رقم المهمة مرتين.")
             else:
                 st.success("✅ تم حفظ المهمة بنجاح.")
-
-
-def assigned_tasks_page():
-    require_login(["technician"])
-    top_nav()
-    page_header("📋 المهام المسندة", "البحث في المهام التي أسندها لك المدير حسب تاريخ الإسناد.")
-    _assigned_tasks_admin_view(st.session_state.fullname, "assigned_tasks_tech")
 
 
 def _assigned_tasks_admin_view(technician_filter, key_prefix):
@@ -488,45 +540,6 @@ def _completed_tasks_view(technician_filter, key_prefix):
     _export_results_button(results, "المهام_المنفذة.xlsx", f"{key_prefix}_export")
 
 
-def daily_tasks_page():
-    require_login(["technician"])
-    top_nav()
-    page_header("📅 المهام اليومية", "عرض المهام المنفذة يومياً ورفع تقرير المهمة.")
-
-    tab_completed, tab_report = st.tabs(["✅ المهام المنفذة", "📷 إضافة تقرير"])
-
-    with tab_completed:
-        _completed_tasks_view(st.session_state.fullname, "daily_completed")
-
-    with tab_report:
-        uploaded_report = st.file_uploader("📷 رفع صورة التقرير", type=["jpg", "jpeg", "png"], key="daily_report_uploader")
-        if uploaded_report is not None:
-            image_bytes = uploaded_report.getvalue()
-            if uploaded_report.size > SETTINGS.max_upload_bytes:
-                st.error("❌ حجم الصورة كبير جداً (الحد الأقصى 5 ميجابايت).")
-            elif not validate_report_image(image_bytes, uploaded_report.type or ""):
-                st.error("Invalid report image. Upload a valid JPEG or PNG file.")
-            else:
-                report_date = date_selector("daily_report_date", label="تاريخ التقرير")
-                if report_date is not None and daily_report_exists(st.session_state.fullname, report_date):
-                    st.info("⚠️ يوجد تقرير محفوظ مسبقاً لهذا التاريخ، وسيتم استبداله عند الحفظ.")
-
-                if st.button("💾 حفظ التقرير", key="daily_report_save_btn", use_container_width=True):
-                    if report_date is None:
-                        st.error("تاريخ غير صحيح.")
-                    else:
-                        with timed_spinner("💾 جاري حفظ المهمة..."):
-                            save_daily_report(
-                                st.session_state.fullname,
-                                report_date,
-                                image_bytes,
-                                uploaded_report.type or "image/jpeg",
-                            )
-                            log_action(st.session_state.fullname, "رفع تقرير", f"التاريخ: {report_date}")
-                        st.success("✅ تم حفظ المهمة بنجاح.")
-                        st.rerun()
-
-
 def admin_page():
     require_login(["admin"])
     top_nav()
@@ -546,15 +559,26 @@ def admin_page():
         c3.metric("العوائق", int((df["task_status"] == "عائق").sum()) if total else 0)
 
         st.divider()
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            keyword = st.text_input("بحث ذكي")
-        with col2:
-            status = st.selectbox("الحالة", ["الكل"] + TASK_STATUSES)
-        with col3:
-            task_type = st.selectbox("النوع", ["الكل"] + TASK_TYPES)
-        with timed_spinner("جاري البحث عن المهمة..."):
-            filtered = as_df(search_tasks(keyword, task_type=task_type, task_status=status))
+        with st.form("admin_manage_filter_form"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                keyword = st.text_input("بحث ذكي")
+            with col2:
+                status = st.selectbox("الحالة", ["الكل"] + TASK_STATUSES)
+            with col3:
+                task_type = st.selectbox("النوع", ["الكل"] + TASK_TYPES)
+            manage_search_submitted = st.form_submit_button("🔍 بحث")
+
+        manage_query_key = (keyword, task_type, status)
+        if manage_search_submitted:
+            with timed_spinner("جاري البحث عن المهمة..."):
+                st.session_state["admin_manage_results"] = search_tasks(keyword, task_type=task_type, task_status=status)
+            st.session_state["admin_manage_query"] = manage_query_key
+        elif "admin_manage_query" not in st.session_state:
+            st.session_state["admin_manage_results"] = df.to_dict("records")
+            st.session_state["admin_manage_query"] = manage_query_key
+
+        filtered = as_df(st.session_state.get("admin_manage_results", []))
         task_dataframe(filtered)
         st.caption(f"عدد النتائج: {len(filtered)}")
 
@@ -631,8 +655,11 @@ def admin_page():
                     incoming = incoming.rename(columns=column_map)
                 columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in incoming.columns]
                 st.dataframe(incoming[columns].head(20), hide_index=True, use_container_width=True)
-                if st.button("بدء الاستيراد", use_container_width=True):
-                    added = duplicated = 0
+                with st.form("import_tasks_form"):
+                    confirm_import = st.form_submit_button("بدء الاستيراد", use_container_width=True)
+                if confirm_import:
+                    added = duplicated = skipped_ambiguous = 0
+                    import_warnings = []
                     with timed_spinner("جاري استيراد البيانات..."):
                         # استخدام البيانات المجلوبة بالفعل بدل تكرار الاستعلام عن كل رقم مهمة
                         existing_numbers = set(df["task_number"].astype(str)) if not df.empty else set()
@@ -648,26 +675,36 @@ def admin_page():
 
                         rows_to_insert = []
                         today = datetime.date.today()
-                        for _, row in incoming.iterrows():
+                        for row_index, row in incoming.iterrows():
                             number = str(row.get("رقم المهمة", "")).strip()
                             if not number or number in existing_numbers:
                                 duplicated += 1
                                 continue
                             raw_technician = str(row.get("الفني", "")).strip() or "غير محدد"
-                            # مطابقة تقريبية (Fuzzy) لاسم الفني مع الفنيين الموجودين بالفعل
-                            resolved_technician = resolve_known_technician(raw_technician, technician_names)
+                            # مطابقة ذكية لاسم الفني: تطابق الاسم الأول، ثم الاسم
+                            # الثاني عند التعارض. إذا تعذّر الفصل يُسجَّل تحذير
+                            # ويُتجاوز هذا السطر فقط دون إيقاف الاستيراد بالكامل.
+                            resolved_technician, ambiguity_warning = match_import_technician(raw_technician, technician_names)
+                            if ambiguity_warning:
+                                import_warnings.append(f"صف {row_index + 2}: {ambiguity_warning}")
+                                skipped_ambiguous += 1
+                                continue
                             # إذا تم التعرف على الفني، تُستخدم مدينته من قاعدة البيانات دائماً
                             # (حتى لو كانت فارغة) وليس من ملف Excel
                             if resolved_technician in technician_city_map:
                                 resolved_city = technician_city_map[resolved_technician]
                             else:
                                 resolved_city = str(row.get("المدينة", "")).strip()
+                            # نوع/حالة المهمة: القيمة الفارغة أو غير المعروفة تُستبدل
+                            # تلقائياً بقيمة افتراضية ولا تُعتبر خطأ يوقف الاستيراد
+                            resolved_type = normalize_import_task_type(row.get("نوع المهمة", ""))
+                            resolved_status = normalize_import_task_status(row.get("حالة المهمة", ""))
                             rows_to_insert.append((
                                 resolved_technician,
                                 number,
                                 str(row.get("رقم الاشتراك", "")).strip(),
-                                str(row.get("نوع المهمة", "تقني")).strip(),
-                                str(row.get("حالة المهمة", "عائق")).strip(),
+                                resolved_type,
+                                resolved_status,
                                 resolved_city,
                                 str(row.get("الملاحظات", "")).strip(),
                                 today,
@@ -677,29 +714,49 @@ def admin_page():
                         # إدراج جماعي بدل استعلام لكل صف على حدة (أسرع بكثير للملفات الكبيرة)
                         bulk_add_tasks(rows_to_insert)
                         if added:
-                            log_action(st.session_state.fullname, "استيراد مهام", f"عدد: {added}, مكرر: {duplicated}")
-                    st.success(f"✅ تمت إضافة {added} مهمة، وتجاهل {duplicated} مهمة مكررة.")
-                    st.rerun()
+                            log_action(
+                                st.session_state.fullname,
+                                "استيراد مهام",
+                                f"عدد: {added}, مكرر: {duplicated}, متجاوَز (اسم فني غامض): {skipped_ambiguous}",
+                            )
+                    summary = f"✅ تمت إضافة {added} مهمة، وتجاهل {duplicated} مهمة مكررة."
+                    if skipped_ambiguous:
+                        summary += f" تم تجاوز {skipped_ambiguous} صف بسبب تعذر تحديد اسم الفني بدقة."
+                    st.success(summary)
+                    if import_warnings:
+                        with st.expander(f"⚠️ سجل تحذيرات الاستيراد ({len(import_warnings)})", expanded=True):
+                            for warning in import_warnings:
+                                st.warning(warning)
+                    st.session_state["last_import_warnings"] = import_warnings
+                    if not import_warnings:
+                        st.rerun()
         with col2:
             st.subheader("📤 تصدير Excel")
-            export_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES, key="export_task_type")
-            export_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES, key="export_task_status")
-            with timed_spinner("جاري تصدير البيانات..."):
-                export_df = df
-                if export_type != "الكل":
-                    export_df = export_df[export_df["task_type"] == export_type]
-                if export_status != "الكل":
-                    export_df = export_df[export_df["task_status"] == export_status]
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    export_df.drop(columns=["id"], errors="ignore").to_excel(writer, index=False)
-            st.download_button(
-                "تحميل ملف Excel",
-                data=output.getvalue(),
-                file_name="tasks.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
+            with st.form("export_tasks_form"):
+                export_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES, key="export_task_type")
+                export_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES, key="export_task_status")
+                export_build_submitted = st.form_submit_button("⚙️ تجهيز ملف Excel")
+
+            if export_build_submitted:
+                with timed_spinner("جاري تصدير البيانات..."):
+                    export_df = df
+                    if export_type != "الكل":
+                        export_df = export_df[export_df["task_type"] == export_type]
+                    if export_status != "الكل":
+                        export_df = export_df[export_df["task_status"] == export_status]
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                        export_df.drop(columns=["id"], errors="ignore").to_excel(writer, index=False)
+                    st.session_state["export_tasks_bytes"] = output.getvalue()
+
+            if st.session_state.get("export_tasks_bytes"):
+                st.download_button(
+                    "تحميل ملف Excel",
+                    data=st.session_state["export_tasks_bytes"],
+                    file_name="tasks.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
 
     with tab_task_reports:
         technicians = (
@@ -742,18 +799,29 @@ def _city_report_tab(city):
         st.info("لا توجد بيانات لهذه المدينة.")
         return
 
-    col1, col2 = st.columns(2)
-    with col1:
-        task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES, key=f"report_type_{city}")
-    with col2:
-        task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES, key=f"report_status_{city}")
-    keyword = st.text_input(
-        "بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها أو اسم الفني",
-        key=f"report_keyword_{city}",
-    )
-    with timed_spinner("جاري إنشاء التقرير..."):
-        # city يُمرر دائماً لضمان عدم اختلاط بيانات المدينتين
-        filtered = as_df(search_tasks(keyword, task_type=task_type, task_status=task_status, city=city))
+    with st.form(f"report_filter_form_{city}"):
+        col1, col2 = st.columns(2)
+        with col1:
+            task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES, key=f"report_type_{city}")
+        with col2:
+            task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES, key=f"report_status_{city}")
+        keyword = st.text_input(
+            "بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها أو اسم الفني",
+            key=f"report_keyword_{city}",
+        )
+        report_search_submitted = st.form_submit_button("🔍 بحث")
+
+    report_query_key = (city, keyword, task_type, task_status)
+    if report_search_submitted:
+        with timed_spinner("جاري إنشاء التقرير..."):
+            # city يُمرر دائماً لضمان عدم اختلاط بيانات المدينتين
+            st.session_state[f"report_results_{city}"] = search_tasks(keyword, task_type=task_type, task_status=task_status, city=city)
+        st.session_state[f"report_query_{city}"] = report_query_key
+    elif f"report_query_{city}" not in st.session_state:
+        st.session_state[f"report_results_{city}"] = df.to_dict("records")
+        st.session_state[f"report_query_{city}"] = report_query_key
+
+    filtered = as_df(st.session_state.get(f"report_results_{city}", []))
 
     c1, c2, c3 = st.columns(3)
     c1.metric("إجمالي النتائج", len(filtered))
@@ -790,7 +858,14 @@ def users_page():
     tab_view, tab_add, tab_edit, tab_delete = st.tabs(["👥 عرض المستخدمين", "➕ إضافة مستخدم", "✏️ تعديل مستخدم", "🗑️ حذف مستخدم"])
 
     with tab_view:
-        search = st.text_input("بحث بالاسم أو اسم المستخدم")
+        with st.form("users_search_form"):
+            search = st.text_input("بحث بالاسم أو اسم المستخدم")
+            users_search_submitted = st.form_submit_button("🔍 بحث")
+
+        if users_search_submitted:
+            st.session_state["users_search_query"] = search
+        search = st.session_state.get("users_search_query", "")
+
         filtered = users_df.copy()
         if search.strip() and not filtered.empty:
             exact_mask = (
@@ -992,7 +1067,14 @@ def inventory_page():
                     st.rerun()
 
     with tab_list:
-        search = st.text_input("بحث باسم المادة أو الوحدة أو الملاحظات")
+        with st.form("materials_search_form"):
+            search = st.text_input("بحث باسم المادة أو الوحدة أو الملاحظات")
+            materials_search_submitted = st.form_submit_button("🔍 بحث")
+
+        if materials_search_submitted:
+            st.session_state["materials_search_query"] = search
+        search = st.session_state.get("materials_search_query", "")
+
         filtered = df.copy()
         if search:
             exact_mask = (
@@ -1193,15 +1275,28 @@ def developer_center_page():
     with tab_users:
         counts = get_system_counts()
         security = get_security_overview()
+
         _metric_cards([
-            ("عدد المستخدمين", counts["users"]),
-            ("عدد المديرين", counts["admins"]),
-            ("عدد الفنيين", counts["technicians"]),
+            ("إجمالي المستخدمين", counts["users"]),
+            ("المستخدمون المتصلون", len(security.get("online_now", []))),
+            ("الحسابات المقفلة", len(security.get("locked", []))),
         ])
-        st.caption("المستخدمون المتصلون الآن (تقديري: آخر دخول خلال 15 دقيقة)")
-        task_dataframe(as_df(security["online_now"])) if security["online_now"] else st.info("لا يوجد مستخدمون متصلون حالياً.")
-        st.caption("آخر عمليات تسجيل الدخول")
-        st.dataframe(as_df(security["recent_logins"]), hide_index=True, use_container_width=True)
+
+        st.divider()
+
+        st.subheader("🟢 المستخدمون المتصلون حالياً")
+        online = pd.DataFrame(security.get("online_now", []))
+        if online.empty:
+            st.info("لا يوجد مستخدمون متصلون حالياً.")
+        else:
+            st.dataframe(online, hide_index=True, use_container_width=True)
+
+        st.subheader("🕒 آخر عمليات تسجيل الدخول")
+        recent = pd.DataFrame(security.get("recent_logins", []))
+        if recent.empty:
+            st.info("لا توجد عمليات تسجيل دخول.")
+        else:
+            st.dataframe(recent, hide_index=True, use_container_width=True)
 
     with tab_tasks:
         counts = get_system_counts()
@@ -1242,14 +1337,22 @@ def developer_center_page():
     with tab_audit:
         with timed_spinner("جاري تحديث البيانات..."):
             audit_df = as_df(get_audit_log(500))
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            search = st.text_input("بحث في السجل", key="audit_search")
-        with col2:
-            user_filter = st.selectbox("تصفية حسب المستخدم", ["الكل"] + (sorted(audit_df["username"].dropna().unique().tolist()) if not audit_df.empty else []), key="audit_user_filter")
-        with col3:
-            action_filter = st.selectbox("تصفية حسب نوع العملية", ["الكل"] + (sorted(audit_df["action"].dropna().unique().tolist()) if not audit_df.empty else []), key="audit_action_filter")
-        date_filter = st.date_input("تصفية حسب التاريخ (اختياري)", value=None, key="audit_date_filter")
+        with st.form("audit_filter_form"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                search = st.text_input("بحث في السجل", key="audit_search")
+            with col2:
+                user_filter = st.selectbox("تصفية حسب المستخدم", ["الكل"] + (sorted(audit_df["username"].dropna().unique().tolist()) if not audit_df.empty else []), key="audit_user_filter")
+            with col3:
+                action_filter = st.selectbox("تصفية حسب نوع العملية", ["الكل"] + (sorted(audit_df["action"].dropna().unique().tolist()) if not audit_df.empty else []), key="audit_action_filter")
+            date_filter = st.date_input("تصفية حسب التاريخ (اختياري)", value=None, key="audit_date_filter")
+            audit_filter_submitted = st.form_submit_button("🔍 تصفية")
+
+        if audit_filter_submitted:
+            st.session_state["audit_filter_params"] = (search, user_filter, action_filter, date_filter)
+        search, user_filter, action_filter, date_filter = st.session_state.get(
+            "audit_filter_params", ("", "الكل", "الكل", None)
+        )
 
         filtered = audit_df.copy()
         if not filtered.empty:
@@ -1458,8 +1561,6 @@ def route():
         "admin": admin_page,
         "technician": technician_page,
         "assign_tasks": admin_page,
-        "assigned_tasks": assigned_tasks_page,
-        "daily_tasks": daily_tasks_page,
         "reports": reports_page,
         "inventory": inventory_page,
         "users": users_page,

@@ -214,7 +214,7 @@ def dashboard_page():
 
 
 def technician_page():
-    require_login(["admin", "technician"])
+    require_login(["technician"])
     top_nav()
     page_header("🛠️ صفحة الفني", "تسجيل المهام اليومية بسرعة وبدون تكرار رقم المهمة.")
 

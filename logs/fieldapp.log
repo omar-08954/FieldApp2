@@ -1,0 +1,165 @@
+2026-07-19 18:11:53,661 ERROR __main__ Unhandled page error in technician_page
+Traceback (most recent call last):
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 476, in __getitem__
+    value = self._parse()[key]
+            ~~~~~~~~~~~~~^^^^^
+KeyError: 'SUPABASE_URL'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 39, in _settings
+    base_url = st.secrets["SUPABASE_URL"].rstrip("/")
+               ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 481, in __getitem__
+    raise KeyError(_missing_key_error_message(key))
+KeyError: 'st.secrets has no key "SUPABASE_URL". Did you forget to add it to secrets.toml, mount it to secret directory, or the app settings on Streamlit Cloud? More info: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 1557, in route
+    handler()
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 319, in technician_page
+    save_daily_report(
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\database.py", line 1248, in save_daily_report
+    object_key = upload_report_image(technician, report_date, image_bytes, image_mime)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 65, in upload_report_image
+    base_url, service_key, bucket = _settings()
+                                    ^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 43, in _settings
+    raise StorageConfigurationError(
+database.storage.StorageConfigurationError: Supabase Storage is not configured. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_STORAGE_BUCKET to secrets.
+2026-07-19 18:11:59,549 ERROR __main__ Unhandled page error in technician_page
+Traceback (most recent call last):
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 476, in __getitem__
+    value = self._parse()[key]
+            ~~~~~~~~~~~~~^^^^^
+KeyError: 'SUPABASE_URL'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 39, in _settings
+    base_url = st.secrets["SUPABASE_URL"].rstrip("/")
+               ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 481, in __getitem__
+    raise KeyError(_missing_key_error_message(key))
+KeyError: 'st.secrets has no key "SUPABASE_URL". Did you forget to add it to secrets.toml, mount it to secret directory, or the app settings on Streamlit Cloud? More info: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 1557, in route
+    handler()
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 319, in technician_page
+    save_daily_report(
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\database.py", line 1248, in save_daily_report
+    object_key = upload_report_image(technician, report_date, image_bytes, image_mime)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 65, in upload_report_image
+    base_url, service_key, bucket = _settings()
+                                    ^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 43, in _settings
+    raise StorageConfigurationError(
+database.storage.StorageConfigurationError: Supabase Storage is not configured. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_STORAGE_BUCKET to secrets.
+2026-07-19 18:12:03,381 ERROR __main__ Unhandled page error in technician_page
+Traceback (most recent call last):
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 476, in __getitem__
+    value = self._parse()[key]
+            ~~~~~~~~~~~~~^^^^^
+KeyError: 'SUPABASE_URL'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 39, in _settings
+    base_url = st.secrets["SUPABASE_URL"].rstrip("/")
+               ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 481, in __getitem__
+    raise KeyError(_missing_key_error_message(key))
+KeyError: 'st.secrets has no key "SUPABASE_URL". Did you forget to add it to secrets.toml, mount it to secret directory, or the app settings on Streamlit Cloud? More info: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 1557, in route
+    handler()
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 319, in technician_page
+    save_daily_report(
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\database.py", line 1248, in save_daily_report
+    object_key = upload_report_image(technician, report_date, image_bytes, image_mime)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 65, in upload_report_image
+    base_url, service_key, bucket = _settings()
+                                    ^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 43, in _settings
+    raise StorageConfigurationError(
+database.storage.StorageConfigurationError: Supabase Storage is not configured. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_STORAGE_BUCKET to secrets.
+2026-07-19 18:12:05,433 ERROR __main__ Unhandled page error in technician_page
+Traceback (most recent call last):
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 476, in __getitem__
+    value = self._parse()[key]
+            ~~~~~~~~~~~~~^^^^^
+KeyError: 'SUPABASE_URL'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 39, in _settings
+    base_url = st.secrets["SUPABASE_URL"].rstrip("/")
+               ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 481, in __getitem__
+    raise KeyError(_missing_key_error_message(key))
+KeyError: 'st.secrets has no key "SUPABASE_URL". Did you forget to add it to secrets.toml, mount it to secret directory, or the app settings on Streamlit Cloud? More info: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 1557, in route
+    handler()
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 319, in technician_page
+    save_daily_report(
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\database.py", line 1248, in save_daily_report
+    object_key = upload_report_image(technician, report_date, image_bytes, image_mime)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 65, in upload_report_image
+    base_url, service_key, bucket = _settings()
+                                    ^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 43, in _settings
+    raise StorageConfigurationError(
+database.storage.StorageConfigurationError: Supabase Storage is not configured. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_STORAGE_BUCKET to secrets.
+2026-07-19 18:12:13,569 ERROR __main__ Unhandled page error in technician_page
+Traceback (most recent call last):
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 476, in __getitem__
+    value = self._parse()[key]
+            ~~~~~~~~~~~~~^^^^^
+KeyError: 'SUPABASE_URL'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 39, in _settings
+    base_url = st.secrets["SUPABASE_URL"].rstrip("/")
+               ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\AppData\Local\Programs\Python\Python312\Lib\site-packages\streamlit\runtime\secrets.py", line 481, in __getitem__
+    raise KeyError(_missing_key_error_message(key))
+KeyError: 'st.secrets has no key "SUPABASE_URL". Did you forget to add it to secrets.toml, mount it to secret directory, or the app settings on Streamlit Cloud? More info: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 1557, in route
+    handler()
+  File "C:\Users\احمد\OneDrive\FieldApp2\app.py", line 319, in technician_page
+    save_daily_report(
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\database.py", line 1248, in save_daily_report
+    object_key = upload_report_image(technician, report_date, image_bytes, image_mime)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 65, in upload_report_image
+    base_url, service_key, bucket = _settings()
+                                    ^^^^^^^^^^^
+  File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 43, in _settings
+    raise StorageConfigurationError(
+database.storage.StorageConfigurationError: Supabase Storage is not configured. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_STORAGE_BUCKET to secrets.
