@@ -163,3 +163,203 @@ Traceback (most recent call last):
   File "C:\Users\احمد\OneDrive\FieldApp2\database\storage.py", line 43, in _settings
     raise StorageConfigurationError(
 database.storage.StorageConfigurationError: Supabase Storage is not configured. Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_STORAGE_BUCKET to secrets.
+2026-07-23 21:48:18,102 ERROR __main__ Unhandled page error in admin_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/app.py", line 1732, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/app.py", line 704, in admin_page
+    top_nav()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/ui.py", line 309, in top_nav
+    badge = get_badge_count()
+  File "/home/omar_13610/FieldApp2/database/notifications.py", line 107, in get_badge_count
+    if not user or not notifications_enabled(user):
+                       ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/home/omar_13610/FieldApp2/database/notifications.py", line 43, in notifications_enabled
+    return get_user_notification_setting(user)
+  File "/home/omar_13610/FieldApp2/database/database.py", line 1713, in get_user_notification_setting
+    row = fetch_one("SELECT notifications_enabled FROM users WHERE username = %s", ((username or "").strip(),))
+  File "/home/omar_13610/FieldApp2/database/database.py", line 470, in fetch_one
+    return _with_connection(_action)
+  File "/home/omar_13610/FieldApp2/database/database.py", line 429, in _with_connection
+    result = action(conn)
+  File "/home/omar_13610/FieldApp2/database/database.py", line 463, in _action
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column "notifications_enabled" does not exist
+LINE 1: SELECT notifications_enabled FROM users WHERE username = 'ad...
+               ^
+
+2026-07-23 21:49:38,184 ERROR __main__ Unhandled page error in admin_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/app.py", line 1732, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/app.py", line 704, in admin_page
+    top_nav()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/ui.py", line 309, in top_nav
+    badge = get_badge_count()
+  File "/home/omar_13610/FieldApp2/database/notifications.py", line 107, in get_badge_count
+    if not user or not notifications_enabled(user):
+                       ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/home/omar_13610/FieldApp2/database/notifications.py", line 43, in notifications_enabled
+    return get_user_notification_setting(user)
+  File "/home/omar_13610/FieldApp2/database/database.py", line 1713, in get_user_notification_setting
+    row = fetch_one("SELECT notifications_enabled FROM users WHERE username = %s", ((username or "").strip(),))
+  File "/home/omar_13610/FieldApp2/database/database.py", line 470, in fetch_one
+    return _with_connection(_action)
+  File "/home/omar_13610/FieldApp2/database/database.py", line 429, in _with_connection
+    result = action(conn)
+  File "/home/omar_13610/FieldApp2/database/database.py", line 463, in _action
+    cur.execute(query, params)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: column "notifications_enabled" does not exist
+LINE 1: SELECT notifications_enabled FROM users WHERE username = 'ad...
+               ^
+
+2026-07-23 21:51:17,153 ERROR __main__ Unhandled page error in developer_center_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/app.py", line 1732, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/app.py", line 1407, in developer_center_page
+    top_nav()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/ui.py", line 309, in top_nav
+    badge = get_badge_count()
+  File "/home/omar_13610/FieldApp2/database/notifications.py", line 107, in get_badge_count
+    if not user or not notifications_enabled(user):
+                       ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/home/omar_13610/FieldApp2/database/notifications.py", line 43, in notifications_enabled
+    return get_user_notification_setting(user)
+  File "/home/omar_13610/FieldApp2/database/database.py", line 1713, in get_user_notification_setting
+    row = fetch_one("SELECT notifications_enabled FROM users WHERE username = %s", ((username or "").strip(),))
+  File "/home/omar_13610/FieldApp2/database/database.py", line 470, in fetch_one
+    return _with_connection(_action)
+  File "/home/omar_13610/FieldApp2/database/database.py", line 427, in _with_connection
+    conn = get_connection()
+  File "/home/omar_13610/FieldApp2/database/database.py", line 386, in get_connection
+    return _connection_pool().getconn()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/psycopg2/pool.py", line 169, in getconn
+    return self._getconn(key)
+           ~~~~~~~~~~~~~^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/psycopg2/pool.py", line 93, in _getconn
+    return self._connect(key)
+           ~~~~~~~~~~~~~^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/psycopg2/pool.py", line 63, in _connect
+    conn = psycopg2.connect(*self._args, **self._kwargs)
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/psycopg2/__init__.py", line 122, in connect
+    conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+psycopg2.OperationalError: connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (64:ff9b::dd5:f1f8), port 6543 failed: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+2026-07-23 22:02:34,020 ERROR __main__ Unhandled page error in admin_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1505, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 727, in admin_page
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+         ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/pandas/io/excel/_openpyxl.py", line 58, in __init__
+    from openpyxl.workbook import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+2026-07-23 22:02:34,020 ERROR __main__ Unhandled page error in admin_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1505, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 727, in admin_page
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+         ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/pandas/io/excel/_openpyxl.py", line 58, in __init__
+    from openpyxl.workbook import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+2026-07-23 22:03:04,339 ERROR __main__ Unhandled page error in admin_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1505, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 727, in admin_page
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+         ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/pandas/io/excel/_openpyxl.py", line 58, in __init__
+    from openpyxl.workbook import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+2026-07-23 22:03:04,339 ERROR __main__ Unhandled page error in admin_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1505, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 727, in admin_page
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+         ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/pandas/io/excel/_openpyxl.py", line 58, in __init__
+    from openpyxl.workbook import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+2026-07-23 22:30:23,464 ERROR __main__ Unhandled page error in developer_center_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1505, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1303, in developer_center_page
+    _export_results_button(filtered.to_dict("records"), "سجل_العمليات.xlsx", "audit_log_export")
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 461, in _export_results_button
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+         ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/pandas/io/excel/_openpyxl.py", line 58, in __init__
+    from openpyxl.workbook import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+2026-07-23 22:30:23,464 ERROR __main__ Unhandled page error in developer_center_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1505, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1303, in developer_center_page
+    _export_results_button(filtered.to_dict("records"), "سجل_العمليات.xlsx", "audit_log_export")
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 461, in _export_results_button
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+         ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/pandas/io/excel/_openpyxl.py", line 58, in __init__
+    from openpyxl.workbook import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+2026-07-23 22:33:13,531 ERROR __main__ Unhandled page error in developer_center_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1505, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1303, in developer_center_page
+    _export_results_button(filtered.to_dict("records"), "سجل_العمليات.xlsx", "audit_log_export")
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 461, in _export_results_button
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+         ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/pandas/io/excel/_openpyxl.py", line 58, in __init__
+    from openpyxl.workbook import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+2026-07-23 22:33:13,531 ERROR __main__ Unhandled page error in developer_center_page
+Traceback (most recent call last):
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1505, in route
+    handler()
+    ~~~~~~~^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 1303, in developer_center_page
+    _export_results_button(filtered.to_dict("records"), "سجل_العمليات.xlsx", "audit_log_export")
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/pages/application.py", line 461, in _export_results_button
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+         ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omar_13610/FieldApp2/.venv/lib/python3.14/site-packages/pandas/io/excel/_openpyxl.py", line 58, in __init__
+    from openpyxl.workbook import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
