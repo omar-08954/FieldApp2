@@ -303,8 +303,12 @@ def require_login(roles=None):
 
 
 def top_nav():
+    from database.notifications import get_badge_count, notifications_enabled, set_notifications_enabled
+
     st.markdown('<div class="top-nav">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([2, 1, 1])
+    badge = get_badge_count()
+    bell_label = f"🔔 الإشعارات ({badge})" if badge else "🔔 الإشعارات"
+    col1, col2, col3, col4 = st.columns([2, 1.2, 1, 1])
     with col1:
         st.markdown(
             f"**{st.session_state.get('fullname', '')}**  \n"
@@ -312,12 +316,25 @@ def top_nav():
             unsafe_allow_html=True,
         )
     with col2:
-        if st.button("🏠 الرئيسية", use_container_width=True):
-            st.session_state.current_page = "home"
+        enabled = notifications_enabled()
+        new_enabled = st.toggle("تشغيل الإشعارات", value=enabled, key="notifications_toggle")
+        if new_enabled != enabled:
+            set_notifications_enabled(new_enabled)
             st.rerun()
     with col3:
-        if st.button("🚪 تسجيل الخروج", use_container_width=True):
-            logout()
+        if st.button(bell_label, use_container_width=True, key="open_notifications"):
+            st.session_state.current_page = "admin"
+            st.session_state["open_notifications_tab"] = True
+            st.rerun()
+    with col4:
+        c_home, c_logout = st.columns(2)
+        with c_home:
+            if st.button("🏠", use_container_width=True, help="الرئيسية"):
+                st.session_state.current_page = "home"
+                st.rerun()
+        with c_logout:
+            if st.button("🚪", use_container_width=True, help="تسجيل الخروج"):
+                logout()
     st.markdown("</div>", unsafe_allow_html=True)
 
 

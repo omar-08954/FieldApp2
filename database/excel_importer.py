@@ -24,6 +24,13 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
+from database.data_cleaner import clean_dataframe, clean_text, clean_numeric_text
+from database.technician_matcher import (
+    AUTO_LINK_THRESHOLD,
+    TechnicianMatchResult,
+    match_technician,
+)
+
 # ---------------------------------------------------------------------------
 # ثوابت التطبيق
 # ---------------------------------------------------------------------------
@@ -100,11 +107,15 @@ class ImportReport:
     total_read: int = 0
     imported: int = 0
     duplicated: int = 0
+    needs_review_count: int = 0
     errors: list[RowError] = field(default_factory=list)
     unknown_technicians: list[dict] = field(default_factory=list)
     recognized_technicians: set[str] = field(default_factory=set)
     elapsed_seconds: float = 0.0
     column_mapping_used: dict[str, str] = field(default_factory=dict)
+    file_name: str = ""
+    username: str = ""
+    imported_at: datetime.datetime | None = None
 
     @property
     def error_count(self) -> int:
@@ -113,6 +124,10 @@ class ImportReport:
     @property
     def unknown_technician_count(self) -> int:
         return len(self.unknown_technicians)
+
+    @property
+    def review_count(self) -> int:
+        return self.needs_review_count
 
     @property
     def recognized_technician_count(self) -> int:
@@ -281,170 +296,8 @@ def resolve_column_mapping(
 
 
 # ---------------------------------------------------------------------------
-# التعرف الذكي على أسماء الفنيين
+# مطابقة الفنيين — تُستخدم technician_matcher (RapidFuzz)
 # ---------------------------------------------------------------------------
-
-@dataclass
-class TechnicianMatchResult:
-    """نتيجة مطابقة اسم فني."""
-    resolved_name: str | None   # الاسم المُطابق من قاعدة البيانات، أو None
-    confidence: float           # درجة الثقة (0.0 – 1.0)
-    is_known: bool              # هل وُجد في قاعدة البيانات؟
-    candidates: list[str]       # المرشحون المتعارضون (إن وُجدوا)
-    warning: str | None         # رسالة تحذير للمستخدم
-
-
-def match_technician(
-    raw_name: str,
-    known_technicians: list[dict],
-    threshold: float = 0.82,
-) -> TechnicianMatchResult:
-    """مطابقة ذكية لاسم فني مقابل قائمة الفنيين المعروفين.
-
-    الخوارزمية:
-    1. تطبيع الاسم الخام وإزالة الألقاب.
-    2. مطابقة حرفية كاملة (score = 1.0).
-    3. مطابقة الاسم الأول (First Token) مع كل الفنيين.
-    4. إذا وُجد مرشح واحد بالاسم الأول → مطابقة ناجحة.
-    5. إذا وُجد أكثر من مرشح → استخدام الاسم الثاني للفصل.
-    6. إذا تعذّر الفصل → حالة غامضة (unknown).
-    7. إذا لم يوجد أي مرشح بالاسم الأول → Fuzzy Match شامل.
-    8. إذا لم تصل الدرجة إلى threshold → الفني غير معروف.
-
-    لا يُنشئ هذا النظام أسماءً جديدةً ولا يربط مهمةً بفني خاطئ.
-
-    Parameters
-    ----------
-    raw_name:
-        الاسم الخام من ملف Excel.
-    known_technicians:
-        قائمة قواميس تحتوي على مفاتيح ``fullname`` (و``city`` اختياريًّا).
-    threshold:
-        الحد الأدنى لدرجة الثقة المطلوبة للقبول.
-    """
-    raw_name = str(raw_name or "").strip()
-    if not raw_name:
-        return TechnicianMatchResult(
-            resolved_name=None,
-            confidence=0.0,
-            is_known=False,
-            candidates=[],
-            warning="اسم الفني فارغ.",
-        )
-
-    normalized_raw = _strip_title_prefix(raw_name)
-    raw_tokens = _text_tokens(normalized_raw)
-
-    if not raw_tokens:
-        return TechnicianMatchResult(
-            resolved_name=None,
-            confidence=0.0,
-            is_known=False,
-            candidates=[],
-            warning=f"لم يمكن تطبيع الاسم: \"{raw_name}\".",
-        )
-
-    # --- الخطوة 1: مطابقة حرفية كاملة ---
-    for tech in known_technicians:
-        known = str(tech.get("fullname") or "").strip()
-        if not known:
-            continue
-        if _normalize_text(raw_name) == _normalize_text(known):
-            return TechnicianMatchResult(
-                resolved_name=known,
-                confidence=1.0,
-                is_known=True,
-                candidates=[],
-                warning=None,
-            )
-
-    first_token = raw_tokens[0]
-
-    # --- الخطوة 2: مطابقة الاسم الأول ---
-    first_token_matches: list[tuple[str, list[str], float]] = []
-    for tech in known_technicians:
-        known = str(tech.get("fullname") or "").strip()
-        if not known:
-            continue
-        known_normalized = _strip_title_prefix(known)
-        known_tokens = _text_tokens(known_normalized)
-        if not known_tokens:
-            continue
-        first_sim = SequenceMatcher(None, known_tokens[0], first_token).ratio()
-        if known_tokens[0] == first_token or first_sim >= 0.85:
-            first_token_matches.append((known, known_tokens, first_sim))
-
-    if not first_token_matches:
-        # --- الخطوة 3: Fuzzy Match شامل كـ fallback ---
-        best_name, best_score = None, 0.0
-        for tech in known_technicians:
-            known = str(tech.get("fullname") or "").strip()
-            if not known:
-                continue
-            score = _fuzzy_ratio(normalized_raw, _strip_title_prefix(known))
-            if score > best_score:
-                best_score = score
-                best_name = known
-
-        if best_name and best_score >= threshold:
-            return TechnicianMatchResult(
-                resolved_name=best_name,
-                confidence=best_score,
-                is_known=True,
-                candidates=[],
-                warning=None,
-            )
-        return TechnicianMatchResult(
-            resolved_name=None,
-            confidence=best_score,
-            is_known=False,
-            candidates=[],
-            warning=f"لم يُعثر على فني مطابق لـ \"{raw_name}\" في قاعدة البيانات.",
-        )
-
-    if len(first_token_matches) == 1:
-        name, _, sim = first_token_matches[0]
-        return TechnicianMatchResult(
-            resolved_name=name,
-            confidence=sim,
-            is_known=True,
-            candidates=[],
-            warning=None,
-        )
-
-    # --- الخطوة 4: فصل بالاسم الثاني ---
-    if len(raw_tokens) >= 2:
-        second_token = raw_tokens[1]
-        narrowed = [
-            (name, tokens, sim)
-            for name, tokens, sim in first_token_matches
-            if len(tokens) >= 2 and (
-                tokens[1] == second_token
-                or SequenceMatcher(None, tokens[1], second_token).ratio() >= 0.85
-            )
-        ]
-        if len(narrowed) == 1:
-            name, _, sim = narrowed[0]
-            return TechnicianMatchResult(
-                resolved_name=name,
-                confidence=sim,
-                is_known=True,
-                candidates=[],
-                warning=None,
-            )
-
-    # --- الخطوة 5: حالة غامضة (أكثر من مرشح) ---
-    candidate_names = [name for name, _, _ in first_token_matches]
-    return TechnicianMatchResult(
-        resolved_name=None,
-        confidence=0.0,
-        is_known=False,
-        candidates=candidate_names,
-        warning=(
-            f"تعذر تحديد الفني \"{raw_name}\" بدقة — "
-            f"احتمالات متعددة: {', '.join(candidate_names)}."
-        ),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -517,61 +370,37 @@ def import_excel(
     known_technicians: list[dict],
     existing_tasks: list[dict],
     execution_date: datetime.date | None = None,
-    technician_threshold: float = 0.82,
+    technician_threshold: float = AUTO_LINK_THRESHOLD,
+    progress_callback=None,
 ) -> tuple[list[tuple], ImportReport]:
-    """تنفيذ الاستيراد الذكي لملف Excel.
-
-    Parameters
-    ----------
-    dataframe:
-        ``pandas.DataFrame`` بعد قراءة ملف Excel.
-    known_technicians:
-        قائمة قواميس من قاعدة البيانات تحتوي على:
-        ``{"fullname": str, "city": str | None}``.
-    existing_tasks:
-        قائمة المهام الموجودة في قاعدة البيانات (لاكتشاف التكرار).
-    execution_date:
-        تاريخ التنفيذ الافتراضي؛ يُستخدم اليوم الحالي إذا لم يُحدَّد.
-    technician_threshold:
-        الحد الأدنى لدرجة الثقة عند مطابقة أسماء الفنيين.
-
-    Returns
-    -------
-    tuple[list[tuple], ImportReport]
-        - قائمة الصفوف الجاهزة للإدراج في قاعدة البيانات.
-        - تقرير مفصل بنتائج الاستيراد.
-    """
+    """تنفيذ الاستيراد الذكي — لا يُفقد أي صف بسبب اختلاف اسم الفني."""
     started = time.perf_counter()
     report = ImportReport()
     today = execution_date or datetime.date.today()
 
-    # --- تطبيق خريطة الأعمدة ---
+    dataframe = clean_dataframe(dataframe)
     column_map = resolve_column_mapping(dataframe.columns.tolist(), dataframe)
     if column_map:
         dataframe = dataframe.rename(columns=column_map)
     report.column_mapping_used = dict(column_map)
 
-    # --- بناء مجموعة مفاتيح التكرار ---
     existing_keys = build_existing_keys(existing_tasks)
-    # مفاتيح الصفوف المضافة في هذه الدفعة (لمنع التكرار داخل الملف نفسه)
     session_keys: set[tuple] = set()
-
-    # --- بناء خريطة الفنيين (fullname -> city) ---
     tech_city_map: dict[str, str] = {
         str(t.get("fullname") or "").strip(): str(t.get("city") or "").strip()
-        for t in known_technicians
-        if t.get("fullname")
+        for t in known_technicians if t.get("fullname")
     }
 
     rows_to_insert: list[tuple] = []
-    report.total_read = len(dataframe)
+    total_rows = len(dataframe)
+    report.total_read = total_rows
 
-    for idx, row in dataframe.iterrows():
-        # رقم الصف في الملف (يبدأ من 2 لأن الصف 1 هو العناوين)
+    for position, (idx, row) in enumerate(dataframe.iterrows()):
         file_row = int(idx) + 2
+        if progress_callback:
+            progress_callback(position + 1, total_rows)
 
-        # --- رقم المهمة (إلزامي) ---
-        task_number = str(row.get("رقم المهمة", "") or "").strip()
+        task_number = clean_numeric_text(row.get("رقم المهمة", ""))
         if not task_number:
             report.errors.append(RowError(
                 row_index=file_row,
@@ -581,58 +410,43 @@ def import_excel(
             ))
             continue
 
-        # --- رقم الاشتراك ---
-        subscription_number = str(row.get("رقم الاشتراك", "") or "").strip()
-
-        # --- نوع وحالة المهمة ---
+        subscription_number = clean_numeric_text(row.get("رقم الاشتراك", ""))
         task_type = normalize_task_type(row.get("نوع المهمة", ""))
         task_status = normalize_task_status(row.get("حالة المهمة", ""))
-
-        # --- مطابقة الفني ---
-        raw_technician = str(row.get("الفني", "") or "").strip()
-        if not raw_technician:
-            report.errors.append(RowError(
-                row_index=file_row,
-                raw_data=dict(row),
-                reason="اسم الفني فارغ.",
-                suggestion="أضف اسم الفني في عمود 'الفني'.",
-            ))
-            continue
+        raw_technician = clean_text(row.get("الفني", "")) or "غير محدد"
 
         match_result = match_technician(raw_technician, known_technicians, technician_threshold)
+        needs_review = match_result.needs_review
+        suggested = match_result.resolved_name if match_result.resolved_name else (match_result.candidates[0] if match_result.candidates else None)
 
-        if not match_result.is_known:
+        if match_result.is_known and not needs_review:
+            resolved_technician = match_result.resolved_name
+            report.recognized_technicians.add(resolved_technician)
+        else:
+            resolved_technician = raw_technician
             report.unknown_technicians.append({
                 "row": file_row,
                 "raw_name": raw_technician,
                 "warning": match_result.warning,
                 "candidates": match_result.candidates,
+                "confidence": match_result.confidence,
+                "suggested": suggested,
             })
-            report.errors.append(RowError(
-                row_index=file_row,
-                raw_data=dict(row),
-                reason=match_result.warning or f"الفني \"{raw_technician}\" غير موجود في قاعدة البيانات.",
-                suggestion=(
-                    f"تحقق من اسم الفني. المرشحون المحتملون: {', '.join(match_result.candidates)}"
-                    if match_result.candidates
-                    else "أضف الفني إلى النظام أولاً أو تحقق من الاسم."
-                ),
-            ))
-            continue
+            if match_result.warning:
+                report.errors.append(RowError(
+                    row_index=file_row,
+                    raw_data=dict(row),
+                    reason=match_result.warning,
+                    suggestion="راجع تبويب مراجعة الاستيراد لاعتماد الفني الصحيح.",
+                ))
 
-        resolved_technician = match_result.resolved_name
-        report.recognized_technicians.add(resolved_technician)
-
-        # --- المدينة: من قاعدة البيانات أولاً، ثم من الملف ---
         if resolved_technician in tech_city_map:
             resolved_city = tech_city_map[resolved_technician]
         else:
-            resolved_city = str(row.get("المدينة", "") or "").strip()
+            resolved_city = clean_text(row.get("المدينة", ""))
 
-        # --- الملاحظات ---
-        notes = str(row.get("الملاحظات", "") or "").strip()
+        notes = clean_text(row.get("الملاحظات", ""))
 
-        # --- اكتشاف التكرار الحقيقي ---
         dup_key = _make_duplicate_key(
             resolved_technician, task_number, subscription_number,
             task_type, task_status, resolved_city,
@@ -651,8 +465,14 @@ def import_excel(
             resolved_city,
             notes,
             today,
+            needs_review,
+            raw_technician,
+            match_result.confidence,
+            suggested,
         ))
         report.imported += 1
+        if needs_review:
+            report.needs_review_count += 1
 
     report.elapsed_seconds = time.perf_counter() - started
     return rows_to_insert, report

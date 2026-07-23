@@ -665,6 +665,61 @@ def create_tables():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_error_log_created_at ON error_log(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_reports_image_url ON daily_reports(image_url) WHERE image_url IS NOT NULL")
 
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN DEFAULT TRUE")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS needs_review BOOLEAN DEFAULT FALSE")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS excel_technician_name TEXT")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS match_confidence REAL")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS suggested_technician TEXT")
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS import_logs (
+            id SERIAL PRIMARY KEY,
+            file_name TEXT NOT NULL,
+            username TEXT NOT NULL,
+            imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            total_rows INTEGER DEFAULT 0,
+            imported_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            review_count INTEGER DEFAULT 0,
+            elapsed_seconds REAL DEFAULT 0,
+            details TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS import_reviews (
+            id SERIAL PRIMARY KEY,
+            task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+            excel_technician_name TEXT NOT NULL,
+            suggested_technician TEXT,
+            match_confidence REAL,
+            issue_reason TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            resolved_at TIMESTAMP,
+            resolved_by TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            username TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_import_reviews_status ON import_reviews(status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_username ON notifications(username)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(username, is_read)")
+
     # Trigram indexes make the existing ILIKE search scale to large task
     # tables.  The extension is optional in managed PostgreSQL deployments,
     # so a permission failure must not prevent the application from starting.
@@ -889,30 +944,46 @@ def add_task(technician, task_number, subscription_number, task_type, task_statu
 
 
 def bulk_add_tasks(rows):
-    """إدراج جماعي دفعة واحدة (INSERT متعدد الصفوف) بدل استعلام منفصل لكل
-    مهمة، لتسريع استيراد ملفات Excel الكبيرة بشكل ملحوظ. rows: قائمة tuples
-    بالترتيب: (technician, task_number, subscription_number, task_type,
-    task_status, city, notes, execution_date)."""
+    """إدراج جماعي دفعة واحدة. كل صف tuple:
+    (technician, task_number, subscription_number, task_type, task_status, city,
+    notes, execution_date [, needs_review, excel_technician_name, match_confidence,
+    suggested_technician])."""
     if not rows:
-        return
+        return []
+
+    normalized = []
+    for row in rows:
+        base = tuple(row[:8])
+        extras = row[8:] if len(row) > 8 else ()
+        needs_review = extras[0] if len(extras) > 0 else False
+        excel_name = extras[1] if len(extras) > 1 else None
+        confidence = extras[2] if len(extras) > 2 else None
+        suggested = extras[3] if len(extras) > 3 else None
+        normalized.append(base + (needs_review, excel_name, confidence, suggested))
+
+    inserted_ids: list[int] = []
 
     def _action(conn):
         cur = conn.cursor()
-        execute_values(
-            cur,
-            """
-            INSERT INTO tasks
-                (technician, task_number, subscription_number, task_type, task_status, city, notes, execution_date, created_at, updated_at)
-            VALUES %s
-            """,
-            rows,
-            template="(%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-        )
+        for row in normalized:
+            cur.execute(
+                """
+                INSERT INTO tasks
+                    (technician, task_number, subscription_number, task_type, task_status,
+                     city, notes, execution_date, needs_review, excel_technician_name,
+                     match_confidence, suggested_technician, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+                """,
+                row,
+            )
+            inserted_ids.append(cur.fetchone()[0])
         conn.commit()
         cur.close()
 
     _with_connection(_action)
     _invalidate_cache()
+    return inserted_ids
 
 
 def update_task(task_id, task_number, subscription_number, task_type, task_status, city=None, notes=None):
@@ -1541,3 +1612,170 @@ def get_security_overview():
 def cleanup_cache():
     """مسح كل الكاش يدوياً من تبويب الصيانة بمركز المطور."""
     _invalidate_cache()
+
+
+# =========================================================
+# سجل الاستيراد ومراجعة الاستيراد والإشعارات
+# =========================================================
+
+def save_import_log(file_name, username, total_rows, imported_count, error_count, review_count, elapsed_seconds, details=""):
+    return fetch_one(
+        """
+        INSERT INTO import_logs
+            (file_name, username, total_rows, imported_count, error_count, review_count, elapsed_seconds, details)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id, imported_at
+        """,
+        (file_name, username, total_rows, imported_count, error_count, review_count, elapsed_seconds, details),
+    )
+
+
+def get_import_logs(limit=100):
+    return fetch_all(
+        """
+        SELECT id, file_name, username, imported_at, total_rows, imported_count,
+               error_count, review_count, elapsed_seconds
+        FROM import_logs ORDER BY id DESC LIMIT %s
+        """,
+        (limit,),
+    )
+
+
+def create_import_review(task_id, excel_technician_name, suggested_technician=None, match_confidence=None, issue_reason=""):
+    execute(
+        """
+        INSERT INTO import_reviews
+            (task_id, excel_technician_name, suggested_technician, match_confidence, issue_reason, status)
+        VALUES (%s, %s, %s, %s, %s, 'pending')
+        """,
+        (int(task_id), excel_technician_name, suggested_technician, match_confidence, issue_reason),
+    )
+
+
+def get_pending_import_reviews(keyword=""):
+    keyword = (keyword or "").strip()
+    if keyword:
+        like = f"%{keyword}%"
+        return fetch_all(
+            """
+            SELECT r.id, r.task_id, r.excel_technician_name, r.suggested_technician,
+                   r.match_confidence, r.issue_reason, r.status, r.created_at,
+                   t.task_number, t.subscription_number, t.task_type, t.task_status, t.city
+            FROM import_reviews r
+            JOIN tasks t ON t.id = r.task_id
+            WHERE r.status = 'pending'
+              AND (r.excel_technician_name ILIKE %s OR COALESCE(r.suggested_technician, '') ILIKE %s
+                   OR t.task_number ILIKE %s)
+            ORDER BY r.id DESC
+            """,
+            (like, like, like),
+        )
+    return fetch_all(
+        """
+        SELECT r.id, r.task_id, r.excel_technician_name, r.suggested_technician,
+               r.match_confidence, r.issue_reason, r.status, r.created_at,
+               t.task_number, t.subscription_number, t.task_type, t.task_status, t.city
+        FROM import_reviews r
+        JOIN tasks t ON t.id = r.task_id
+        WHERE r.status = 'pending'
+        ORDER BY r.id DESC
+        """
+    )
+
+
+def approve_import_review(review_id, technician_name, resolved_by=""):
+    execute(
+        """
+        UPDATE tasks SET technician = %s, needs_review = FALSE, updated_at = CURRENT_TIMESTAMP
+        WHERE id = (SELECT task_id FROM import_reviews WHERE id = %s)
+        """,
+        (technician_name.strip(), int(review_id)),
+    )
+    execute(
+        """
+        UPDATE import_reviews
+        SET status = 'approved', resolved_at = CURRENT_TIMESTAMP, resolved_by = %s
+        WHERE id = %s
+        """,
+        ((resolved_by or "").strip(), int(review_id)),
+    )
+    _invalidate_cache()
+
+
+def bulk_approve_import_reviews(review_ids, resolved_by=""):
+    for review_id in review_ids:
+        row = fetch_one("SELECT id, suggested_technician FROM import_reviews WHERE id = %s AND status = 'pending'", (int(review_id),))
+        if row and row.get("suggested_technician"):
+            approve_import_review(row["id"], row["suggested_technician"], resolved_by)
+
+
+def get_user_notification_setting(username):
+    row = fetch_one("SELECT notifications_enabled FROM users WHERE username = %s", ((username or "").strip(),))
+    if not row:
+        return True
+    return bool(row.get("notifications_enabled", True))
+
+
+def set_user_notification_setting(username, enabled):
+    execute(
+        "UPDATE users SET notifications_enabled = %s WHERE username = %s",
+        (bool(enabled), (username or "").strip()),
+    )
+
+
+def create_notification(username, event_type, title, message):
+    execute(
+        """
+        INSERT INTO notifications (username, event_type, title, message, is_read)
+        VALUES (%s, %s, %s, %s, FALSE)
+        """,
+        ((username or "").strip(), event_type, title, message),
+    )
+
+
+def get_user_notifications(username, unread_only=False, keyword=""):
+    clauses = ["username = %s"]
+    params: list = [(username or "").strip()]
+    if unread_only:
+        clauses.append("is_read = FALSE")
+    keyword = (keyword or "").strip()
+    if keyword:
+        clauses.append("(title ILIKE %s OR message ILIKE %s)")
+        like = f"%{keyword}%"
+        params.extend([like, like])
+    where = " AND ".join(clauses)
+    return fetch_all(
+        f"""
+        SELECT id, event_type, title, message, is_read, created_at
+        FROM notifications WHERE {where}
+        ORDER BY id DESC LIMIT 500
+        """,
+        tuple(params),
+    )
+
+
+def get_unread_notification_count(username):
+    row = fetch_one(
+        "SELECT COUNT(*) AS n FROM notifications WHERE username = %s AND is_read = FALSE",
+        ((username or "").strip(),),
+    )
+    return int(row["n"]) if row else 0
+
+
+def mark_notification_read(notification_id):
+    execute("UPDATE notifications SET is_read = TRUE WHERE id = %s", (int(notification_id),))
+
+
+def mark_all_notifications_read(username):
+    execute(
+        "UPDATE notifications SET is_read = TRUE WHERE username = %s AND is_read = FALSE",
+        ((username or "").strip(),),
+    )
+
+
+def delete_notification(notification_id):
+    execute("DELETE FROM notifications WHERE id = %s", (int(notification_id),))
+
+
+def delete_all_notifications(username):
+    execute("DELETE FROM notifications WHERE username = %s", ((username or "").strip(),))

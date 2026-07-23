@@ -4,3 +4,4 @@ openpyxl==3.1.5
 sqlalchemy==2.0.41
 psycopg2-binary==2.9.10
 bcrypt==4.2.1
+rapidfuzz==3.12.2

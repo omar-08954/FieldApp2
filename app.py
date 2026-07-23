@@ -13,13 +13,16 @@ from database.database import (
     add_material,
     add_task,
     add_user,
+    approve_import_review,
     assign_task,
     assigned_task_number_exists,
     bulk_add_tasks,
+    bulk_approve_import_reviews,
     change_password,
     check_current_password,
     cleanup_cache,
     complete_assigned_task,
+    create_import_review,
     create_tables,
     daily_report_exists,
     daily_report_display_source,
@@ -35,6 +38,8 @@ from database.database import (
     get_daily_report,
     get_database_info,
     get_error_log,
+    get_import_logs,
+    get_pending_import_reviews,
     get_query_stats,
     get_security_overview,
     get_system_counts,
@@ -50,6 +55,7 @@ from database.database import (
     normalize_import_task_type,
     resolve_column_mapping,
     save_daily_report,
+    save_import_log,
     search_assigned_tasks,
     search_completed_tasks,
     search_tasks,
@@ -58,7 +64,19 @@ from database.database import (
     update_material,
     update_task,
     delete_tasks,
-    update_user
+    update_user,
+)
+from database.excel_importer import import_excel
+from database.notifications import (
+    list_notifications,
+    mark_all_read,
+    mark_read,
+    notify_admins,
+    notify_technician_by_name,
+    notify_user,
+    remove_all_notifications,
+    remove_notification,
+    show_toast,
 )
 from database.storage import ReportImageNotFoundError, StorageConfigurationError, StorageOperationError, validate_report_image
 from config import SETTINGS
@@ -538,6 +556,147 @@ def _completed_tasks_view(technician_filter, key_prefix):
     results = st.session_state.get(f"{key_prefix}_results", []) if query == (technician_filter, completed_date) else []
     task_dataframe(as_df(results))
     _export_results_button(results, "المهام_المنفذة.xlsx", f"{key_prefix}_export")
+
+
+def _import_review_tab(technicians_df):
+    st.subheader("🔍 مراجعة الاستيراد")
+    technicians_only = technicians_df[technicians_df["role"] == "technician"] if not technicians_df.empty else technicians_df
+    technician_names = sorted(technicians_only["fullname"].tolist()) if not technicians_only.empty else []
+
+    with st.form("import_review_filter_form"):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            keyword = st.text_input("بحث", placeholder="اسم الفني، رقم المهمة...")
+        with col2:
+            refresh = st.form_submit_button("🔄 تحديث", use_container_width=True)
+
+    if refresh or "import_review_loaded" not in st.session_state:
+        st.session_state["import_review_rows"] = get_pending_import_reviews(keyword if refresh else st.session_state.get("import_review_keyword", ""))
+        st.session_state["import_review_keyword"] = keyword if refresh else st.session_state.get("import_review_keyword", "")
+
+    reviews = st.session_state.get("import_review_rows", get_pending_import_reviews())
+    if not reviews:
+        st.info("لا توجد مهام تحتاج مراجعة.")
+        return
+
+    display_rows = []
+    for row in reviews:
+        confidence = row.get("match_confidence")
+        display_rows.append({
+            "review_id": row["id"],
+            "task_id": row["task_id"],
+            "excel_technician_name": row["excel_technician_name"],
+            "suggested_technician": row.get("suggested_technician") or "",
+            "match_confidence": f"{confidence:.0%}" if confidence is not None else "—",
+            "issue_reason": row.get("issue_reason") or "",
+            "task_number": row.get("task_number") or "",
+            "city": row.get("city") or "",
+        })
+
+    review_df = pd.DataFrame(display_rows)
+    edited = st.data_editor(
+        review_df,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "review_id": st.column_config.NumberColumn("المعرف", disabled=True),
+            "excel_technician_name": st.column_config.TextColumn("اسم Excel", disabled=True),
+            "suggested_technician": st.column_config.TextColumn("الفني المقترح"),
+            "match_confidence": st.column_config.TextColumn("درجة التطابق", disabled=True),
+            "issue_reason": st.column_config.TextColumn("سبب المشكلة", disabled=True),
+            "task_number": st.column_config.TextColumn("رقم المهمة", disabled=True),
+            "city": st.column_config.TextColumn("المدينة", disabled=True),
+        },
+        key="import_review_editor",
+    )
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        approve_all = st.button("✅ اعتماد جماعي (المقترح)", use_container_width=True)
+    with col_b:
+        selected_review = st.selectbox(
+            "اختر للاعتماد",
+            [f"#{r['review_id']} — {r['excel_technician_name']}" for r in display_rows],
+            key="import_review_select",
+        )
+    with col_c:
+        manual_tech = st.selectbox("فني بديل", technician_names or ["—"], key="import_review_manual_tech")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        approve_one = st.button("✅ اعتماد المحدد", use_container_width=True)
+    with c2:
+        approve_manual = st.button("✏️ اعتماد بالفني البديل", use_container_width=True)
+
+    if approve_all:
+        bulk_approve_import_reviews([r["review_id"] for r in display_rows], st.session_state.fullname)
+        notify_admins("import_review", "مراجعة استيراد", f"تم اعتماد {len(display_rows)} مهمة جماعياً.")
+        show_toast(f"✅ تم اعتماد {len(display_rows)} مهمة.", "✅")
+        st.success("تم الاعتماد الجماعي.")
+        st.rerun()
+
+    if approve_one and selected_review:
+        review_id = int(selected_review.split("—")[0].replace("#", "").strip())
+        row = next((r for r in display_rows if r["review_id"] == review_id), None)
+        if row and row.get("suggested_technician"):
+            approve_import_review(review_id, row["suggested_technician"], st.session_state.fullname)
+            show_toast("✅ تم اعتماد المهمة.", "✅")
+            st.rerun()
+
+    if approve_manual and selected_review and technician_names:
+        review_id = int(selected_review.split("—")[0].replace("#", "").strip())
+        approve_import_review(review_id, manual_tech, st.session_state.fullname)
+        show_toast("✅ تم اعتماد المهمة بالفني البديل.", "✅")
+        st.rerun()
+
+
+def _notifications_center_tab():
+    st.subheader("🔔 مركز الإشعارات")
+    with st.form("notifications_filter_form"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            keyword = st.text_input("بحث")
+        with col2:
+            filter_mode = st.selectbox("الفلترة", ["الكل", "غير المقروءة", "المقروءة"])
+        with col3:
+            submitted = st.form_submit_button("🔍 بحث", use_container_width=True)
+
+    unread_only = filter_mode == "غير المقروءة"
+    items = list_notifications(keyword=keyword if submitted else "")
+    if filter_mode == "المقروءة":
+        items = [n for n in items if n.get("is_read")]
+    elif unread_only:
+        items = [n for n in items if not n.get("is_read")]
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("✅ تعليم الكل كمقروء", use_container_width=True):
+            mark_all_read()
+            st.rerun()
+    with c2:
+        if st.button("🗑️ حذف الكل", use_container_width=True):
+            remove_all_notifications()
+            st.rerun()
+
+    if not items:
+        st.info("لا توجد إشعارات.")
+        return
+
+    for item in items:
+        status = "🟢" if not item.get("is_read") else "⚪"
+        with st.container(border=True):
+            st.markdown(f"**{status} {item.get('title', '')}**")
+            st.caption(str(item.get("created_at", "")))
+            st.write(item.get("message", ""))
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("✅ مقروء", key=f"read_{item['id']}"):
+                    mark_read(item["id"])
+                    st.rerun()
+            with b2:
+                if st.button("🗑️ حذف", key=f"del_{item['id']}"):
+                    remove_notification(item["id"])
+                    st.rerun()
 
 
 def admin_page():
