@@ -37,7 +37,7 @@ def confirm_delete_button(key_prefix, selected_ids, button_label, confirm_noun):
         st.session_state[pending_key] = True
 
     if st.session_state.get(pending_key) and selected_ids:
-        st.warning(f"��يتم حذف {len(selected_ids)} {confirm_noun}. هل أنت متأكد؟")
+        st.warning(f"يتم حذف {len(selected_ids)} {confirm_noun}. هل أنت متأكد؟")
         c1, c2 = st.columns(2)
         with c1:
             confirmed = st.button("✅ تأكيد الحذف", key=f"{key_prefix}_confirm_yes", use_container_width=True)
@@ -256,6 +256,15 @@ def inject_style():
         .stDateInput input {
             color: #120000 !important;
         }
+        /* تجاوب mobile */
+        @media (max-width: 768px) {
+            .top-nav {
+                padding: .6rem 0.5rem;
+            }
+            [data-testid="column"] {
+                gap: 0.25rem !important;
+            }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -303,41 +312,47 @@ def require_login(roles=None):
 
 
 def top_nav():
+    """رأس التطبيق: اسم المستخدم + تشغيل الإشعارات + الإشعارات + الرئيسية + الخروج."""
     from database.notifications import get_badge_count, notifications_enabled, set_notifications_enabled
 
     st.markdown('<div class="top-nav">', unsafe_allow_html=True)
-    badge = get_badge_count()
-    bell_label = f"🔔 ({badge})" if badge else "🔔"
-    col1, col2, col3, col4, col5 = st.columns([2, 1.2, 0.8, 0.8, 1])
-    with col1:
+    
+    # استخدام columns responsive للتطبيق
+    # العمود الأول: الاسم والصلاحية (يأخذ معظم المساحة على اليسار)
+    # باقي الأعمدة: على اليمين بتناسب متساوي
+    col_user, col_toggle, col_notif, col_home, col_logout = st.columns([2, 1.2, 0.9, 0.7, 0.7], gap="small")
+    
+    with col_user:
         st.markdown(
             f"**{st.session_state.get('fullname', '')}**  \n"
             f"<span class='muted'>الصلاحية: {st.session_state.get('role', '')}</span>",
             unsafe_allow_html=True,
         )
-    with col2:
+    
+    with col_toggle:
         enabled = notifications_enabled()
         new_enabled = st.toggle("تشغيل الإشعارات", value=enabled, key="notifications_toggle")
         if new_enabled != enabled:
             set_notifications_enabled(new_enabled)
             st.rerun()
-    with col3:
+    
+    # زر الإشعارات مع العدد
+    with col_notif:
+        badge = get_badge_count()
+        bell_label = f"🔔 ({badge})" if badge else "🔔"
         if st.button(bell_label, use_container_width=True, key="open_notifications", help="الإشعارات"):
-            st.session_state.current_page = "admin"
-            st.session_state["open_notifications_tab"] = True
+            st.session_state.current_page = "notifications"
             st.rerun()
-    with col4:
-        if st.button("🔗", use_container_width=True, key="github_share", help="مشاركة"):
-            pass
-    with col5:
-        c_home, c_logout = st.columns(2)
-        with c_home:
-            if st.button("🏠", use_container_width=True, help="الرئيسية"):
-                st.session_state.current_page = "home"
-                st.rerun()
-        with c_logout:
-            if st.button("🚪", use_container_width=True, help="تسجيل الخروج"):
-                logout()
+    
+    with col_home:
+        if st.button("🏠", use_container_width=True, key="nav_home", help="الرئيسية"):
+            st.session_state.current_page = "home"
+            st.rerun()
+    
+    with col_logout:
+        if st.button("🚪", use_container_width=True, key="nav_logout", help="تسجيل الخروج"):
+            logout()
+    
     st.markdown("</div>", unsafe_allow_html=True)
 
 
