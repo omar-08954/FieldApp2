@@ -37,7 +37,7 @@ def confirm_delete_button(key_prefix, selected_ids, button_label, confirm_noun):
         st.session_state[pending_key] = True
 
     if st.session_state.get(pending_key) and selected_ids:
-        st.warning(f"سيتم حذف {len(selected_ids)} {confirm_noun}. هل أنت متأكد؟")
+        st.warning(f"��يتم حذف {len(selected_ids)} {confirm_noun}. هل أنت متأكد؟")
         c1, c2 = st.columns(2)
         with c1:
             confirmed = st.button("✅ تأكيد الحذف", key=f"{key_prefix}_confirm_yes", use_container_width=True)
@@ -307,8 +307,8 @@ def top_nav():
 
     st.markdown('<div class="top-nav">', unsafe_allow_html=True)
     badge = get_badge_count()
-    bell_label = f"🔔 الإشعارات ({badge})" if badge else "🔔 الإشعارات"
-    col1, col2, col3, col4 = st.columns([2, 1.2, 1, 1])
+    bell_label = f"🔔 ({badge})" if badge else "🔔"
+    col1, col2, col3, col4, col5 = st.columns([2, 1.2, 0.8, 0.8, 1])
     with col1:
         st.markdown(
             f"**{st.session_state.get('fullname', '')}**  \n"
@@ -322,11 +322,14 @@ def top_nav():
             set_notifications_enabled(new_enabled)
             st.rerun()
     with col3:
-        if st.button(bell_label, use_container_width=True, key="open_notifications"):
+        if st.button(bell_label, use_container_width=True, key="open_notifications", help="الإشعارات"):
             st.session_state.current_page = "admin"
             st.session_state["open_notifications_tab"] = True
             st.rerun()
     with col4:
+        if st.button("🔗", use_container_width=True, key="github_share", help="مشاركة"):
+            pass
+    with col5:
         c_home, c_logout = st.columns(2)
         with c_home:
             if st.button("🏠", use_container_width=True, help="الرئيسية"):
