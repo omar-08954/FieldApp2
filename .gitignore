@@ -7,4 +7,3 @@ venv/
 .devcontainer/
 logs/
 exports/
-.agents/
