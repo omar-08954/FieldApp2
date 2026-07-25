@@ -229,6 +229,7 @@ def dashboard_page():
             st.session_state["dashboard_filter_results"] = search_tasks(keyword, technician, task_type, task_status)
         st.session_state["dashboard_filter_query"] = query_key
     elif "dashboard_filter_query" not in st.session_state:
+        # أول ظهور للصفحة: نعرض كل المهام قبل أي بحث، دون تنفيذ استعلام إضافي
         st.session_state["dashboard_filter_results"] = df.to_dict("records")
         st.session_state["dashboard_filter_query"] = query_key
 
@@ -590,6 +591,7 @@ def _completed_tasks_view(technician_filter, key_prefix):
     task_dataframe(as_df(results))
     _export_results_button(results, "المهام_المنفذة.xlsx", f"{key_prefix}_export")
 
+
 def _import_review_tab(technicians_df):
     st.subheader("🔍 مراجعة الاستيراد")
     technicians_only = technicians_df[technicians_df["role"] == "technician"] if not technicians_df.empty else technicians_df
@@ -682,6 +684,55 @@ def _import_review_tab(technicians_df):
         st.rerun()
 
 
+def _notifications_center_tab():
+    st.subheader("🔔 مركز الإشعارات")
+    with st.form("notifications_filter_form"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            keyword = st.text_input("بحث")
+        with col2:
+            filter_mode = st.selectbox("الفلترة", ["الكل", "غير المقروءة", "المقروءة"])
+        with col3:
+            submitted = st.form_submit_button("🔍 بحث", use_container_width=True)
+
+    unread_only = filter_mode == "غير المقروءة"
+    items = list_notifications(keyword=keyword if submitted else "")
+    if filter_mode == "المقروءة":
+        items = [n for n in items if n.get("is_read")]
+    elif unread_only:
+        items = [n for n in items if not n.get("is_read")]
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("✅ تعليم الكل كمقروء", use_container_width=True):
+            mark_all_read()
+            st.rerun()
+    with c2:
+        if st.button("🗑️ حذف الكل", use_container_width=True):
+            remove_all_notifications()
+            st.rerun()
+
+    if not items:
+        st.info("لا توجد إشعارات.")
+        return
+
+    for item in items:
+        status = "🟢" if not item.get("is_read") else "⚪"
+        with st.container(border=True):
+            st.markdown(f"**{status} {item.get('title', '')}**")
+            st.caption(str(item.get("created_at", "")))
+            st.write(item.get("message", ""))
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("✅ مقروء", key=f"read_{item['id']}"):
+                    mark_read(item["id"])
+                    st.rerun()
+            with b2:
+                if st.button("🗑️ حذف", key=f"del_{item['id']}"):
+                    remove_notification(item["id"])
+                    st.rerun()
+
+
 def admin_page():
     require_login(["admin"])
     top_nav()
@@ -690,13 +741,9 @@ def admin_page():
         df = as_df(search_tasks(), ["id", "technician", "task_number", "subscription_number", "task_type", "task_status"])
         technicians_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city"])
 
-    tab_manage, tab_assign, tab_data, tab_transfer, tab_task_reports, tab_daily_tasks, tab_assigned_tasks, tab_import_review = st.tabs(
-        ["📋 إدارة المهام", "📌 إسناد مهمة", "✏️ إدارة البيانات", "📥 الاستيراد والتصدير", "📷 تقارير المهام", "📅 المهام اليومية", "📋 المهام المسندة", "🔍 مراجعة الاستيراد"]
+    tab_manage, tab_assign, tab_data, tab_transfer, tab_task_reports, tab_daily_tasks, tab_assigned_tasks = st.tabs(
+        ["📋 إدارة المهام", "📌 إسناد مهمة", "✏️ إدارة البيانات", "📥 الاستيراد والتصدير", "📷 تقارير المهام", "📅 المهام اليومية", "📋 المهام المسندة"]
     )
-    
-    with tab_import_review:
-        _import_review_tab(technicians_df)
-    
     with tab_manage:
         total = len(df)
         c1, c2, c3 = st.columns(3)
@@ -729,48 +776,7 @@ def admin_page():
         st.caption(f"عدد النتائج: {len(filtered)}")
 
     with tab_assign:
-        st.subheader("📌 إسناد المهمة")
-        technicians_only = technicians_df[technicians_df["role"] == "technician"] if not technicians_df.empty else technicians_df
-        technicians = sorted(technicians_only["fullname"].tolist()) if not technicians_only.empty else []
-        technician_city_map = (
-            {row["fullname"]: (row.get("city") or "") for _, row in technicians_only.iterrows()}
-            if not technicians_only.empty else {}
-        )
-
-        if not technicians:
-            st.info("لا يوجد فنيون مسجلون لإسناد المهام إليهم.")
-        else:
-            with st.form("assign_task_form", clear_on_submit=True):
-                technician = st.selectbox("اختر الفني", technicians)
-                task_number = st.text_input("رقم المهمة")
-                subscription_number = st.text_input("رقم الاشتراك")
-                assigned_date = date_selector("assign_task_date", label="تاريخ الإسناد")
-                submitted = st.form_submit_button("📌 إسناد المهمة")
-
-            if submitted:
-                task_number = task_number.strip()
-                subscription_number = subscription_number.strip()
-                if not task_number or not subscription_number:
-                    st.warning("يرجى إدخال رقم المهمة ورقم الاشتراك.")
-                elif assigned_date is None:
-                    st.error("تاريخ غير صحيح.")
-                else:
-                    with timed_spinner("💾 جاري حفظ المهمة..."):
-                        exists = assigned_task_number_exists(task_number)
-                        if not exists:
-                            assign_task(
-                                technician,
-                                task_number,
-                                subscription_number,
-                                assigned_date=assigned_date,
-                                city=technician_city_map.get(technician, ""),
-                                assigned_by=st.session_state.fullname,
-                            )
-                            log_action(st.session_state.fullname, "إسناد مهمة", f"رقم المهمة: {task_number} → {technician}")
-                    if exists:
-                        st.error("❌ لا يمكن إضافة نفس رقم المهمة مرتين.")
-                    else:
-                        st.success("✅ تم حفظ المهمة بنجاح.")
+        _assign_task_view(technicians_df)
 
     with tab_data:
         st.subheader("✏️ تعديل مهمة")
@@ -850,20 +856,151 @@ def admin_page():
             st.rerun()
 
     with tab_transfer:
-        st.subheader("📥 الاستيراد والتصدير")
-        st.info("استيراد وتصدير البيانات - متقدم في اللوحة الرئيسية.")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("📥 استيراد Excel")
+            uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx"])
+            if uploaded:
+                if uploaded.size > 10 * 1024 * 1024:
+                    st.error("❌ حجم الملف كبير جداً (الحد الأقصى 10 ميجابايت).")
+                    uploaded = None
+            if uploaded:
+                incoming = pd.read_excel(uploaded)
+                if len(incoming) > 20000:
+                    st.error(f"❌ الملف يحتوي على {len(incoming)} صف، والحد الأقصى المسموح به لكل استيراد هو 20,000 صف. يرجى تقسيم الملف.")
+                    incoming = incoming.iloc[0:0]
+                # مطابقة أسماء الأعمدة تلقائياً (بالاسم أو بمحتوى العمود) حتى لو اختلفت عن الأسماء المتوقعة
+                column_map = resolve_column_mapping(incoming.columns, incoming)
+                if column_map:
+                    incoming = incoming.rename(columns=column_map)
+                columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in incoming.columns]
+                st.dataframe(incoming[columns].head(20), hide_index=True, use_container_width=True)
+                with st.form("import_tasks_form"):
+                    confirm_import = st.form_submit_button("بدء الاستيراد", use_container_width=True)
+                if confirm_import:
+                    added = duplicated = skipped_ambiguous = 0
+                    import_warnings = []
+                    with timed_spinner("جاري استيراد البيانات..."):
+                        # استخدام البيانات المجلوبة بالفعل بدل تكرار الاستعلام عن كل رقم مهمة
+                        existing_numbers = set(df["task_number"].astype(str)) if not df.empty else set()
+                        technicians_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city", "created_at"])
+                        if not technicians_df.empty:
+                            technicians_only = technicians_df[technicians_df["role"] == "technician"]
+                            technician_names = technicians_only["fullname"].tolist()
+                            technician_city_map = {
+                                row["fullname"]: (row.get("city") or "") for _, row in technicians_only.iterrows()
+                            }
+                        else:
+                            technician_names, technician_city_map = [], {}
+
+                        rows_to_insert = []
+                        today = datetime.date.today()
+                        for row_index, row in incoming.iterrows():
+                            number = str(row.get("رقم المهمة", "")).strip()
+                            if not number or number in existing_numbers:
+                                duplicated += 1
+                                continue
+                            raw_technician = str(row.get("الفني", "")).strip() or "غير محدد"
+                            # مطابقة ذكية لاسم الفني: تطابق الاسم الأول، ثم الاسم
+                            # الثاني عند التعارض. إذا تعذّر الفصل يُسجَّل تحذير
+                            # ويُتجاوز هذا السطر فقط دون إيقاف الاستيراد بالكامل.
+                            resolved_technician, ambiguity_warning = match_import_technician(raw_technician, technician_names)
+                            if ambiguity_warning:
+                                import_warnings.append(f"صف {row_index + 2}: {ambiguity_warning}")
+                                skipped_ambiguous += 1
+                                continue
+                            # إذا تم التعرف على الفني، تُستخدم مدينته من قاعدة البيانات دائماً
+                            # (حتى لو كانت فارغة) وليس من ملف Excel
+                            if resolved_technician in technician_city_map:
+                                resolved_city = technician_city_map[resolved_technician]
+                            else:
+                                resolved_city = str(row.get("المدينة", "")).strip()
+                            # نوع/حالة المهمة: القيمة الفارغة أو غير المعروفة تُستبدل
+                            # تلقائياً بقيمة افتراضية ولا تُعتبر خطأ يوقف الاستيراد
+                            resolved_type = normalize_import_task_type(row.get("نوع المهمة", ""))
+                            resolved_status = normalize_import_task_status(row.get("حالة المهمة", ""))
+                            rows_to_insert.append((
+                                resolved_technician,
+                                number,
+                                str(row.get("رقم الاشتراك", "")).strip(),
+                                resolved_type,
+                                resolved_status,
+                                resolved_city,
+                                str(row.get("الملاحظات", "")).strip(),
+                                today,
+                            ))
+                            existing_numbers.add(number)
+                            added += 1
+                        # إدراج جماعي بدل استعلام لكل صف على حدة (أسرع بكثير للملفات الكبيرة)
+                        bulk_add_tasks(rows_to_insert)
+                        if added:
+                            log_action(
+                                st.session_state.fullname,
+                                "استيراد مهام",
+                                f"عدد: {added}, مكرر: {duplicated}, متجاوَز (اسم فني غامض): {skipped_ambiguous}",
+                            )
+                    summary = f"✅ تمت إضافة {added} مهمة، وتجاهل {duplicated} مهمة مكررة."
+                    if skipped_ambiguous:
+                        summary += f" تم تجاوز {skipped_ambiguous} صف بسبب تعذر تحديد اسم الفني بدقة."
+                    st.success(summary)
+                    if import_warnings:
+                        with st.expander(f"⚠️ سجل تحذيرات الاستيراد ({len(import_warnings)})", expanded=True):
+                            for warning in import_warnings:
+                                st.warning(warning)
+                    st.session_state["last_import_warnings"] = import_warnings
+                    if not import_warnings:
+                        st.rerun()
+        with col2:
+            st.subheader("📤 تصدير Excel")
+            with st.form("export_tasks_form"):
+                export_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES, key="export_task_type")
+                export_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES, key="export_task_status")
+                export_build_submitted = st.form_submit_button("⚙️ تجهيز ملف Excel")
+
+            if export_build_submitted:
+                with timed_spinner("جاري تصدير البيانات..."):
+                    export_df = df
+                    if export_type != "الكل":
+                        export_df = export_df[export_df["task_type"] == export_type]
+                    if export_status != "الكل":
+                        export_df = export_df[export_df["task_status"] == export_status]
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                        export_df.drop(columns=["id"], errors="ignore").to_excel(writer, index=False)
+                    st.session_state["export_tasks_bytes"] = output.getvalue()
+
+            if st.session_state.get("export_tasks_bytes"):
+                st.download_button(
+                    "تحميل ملف Excel",
+                    data=st.session_state["export_tasks_bytes"],
+                    file_name="tasks.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
 
     with tab_task_reports:
-        st.subheader("📷 تقارير المهام")
-        st.info("عرض التقارير - متقدم في الصفحة المخصصة.")
+        technicians = (
+            sorted(technicians_df[technicians_df["role"] == "technician"]["fullname"].tolist())
+            if not technicians_df.empty else []
+        )
+        if not technicians:
+            st.info("لا يوجد فنيون مسجلون.")
+        else:
+            technician = st.selectbox("اسم الفني", technicians, key="admin_report_tech")
+            _daily_report_view(technician, "admin_report")
 
     with tab_daily_tasks:
-        st.subheader("📅 المهام اليومية")
-        st.info("عرض المهام اليومية - متقدم في الصفحة المخصصة.")
+        technicians_daily = (
+            sorted(technicians_df[technicians_df["role"] == "technician"]["fullname"].tolist())
+            if not technicians_df.empty else []
+        )
+        if not technicians_daily:
+            st.info("لا يوجد فنيون مسجلون.")
+        else:
+            technician_daily = st.selectbox("الفني", technicians_daily, key="admin_daily_tasks_tech")
+            _completed_tasks_view(technician_daily, "admin_daily_tasks")
 
     with tab_assigned_tasks:
-        st.subheader("📋 المهام المسندة")
-        st.info("عرض المهام المسندة - متقدم في الصفحة المخصصة.")
         technicians_assigned = (
             sorted(technicians_df[technicians_df["role"] == "technician"]["fullname"].tolist())
             if not technicians_df.empty else []
@@ -1678,6 +1815,7 @@ def route():
         "dashboard": dashboard_page,
         "admin": admin_page,
         "technician": technician_page,
+        "assign_tasks": admin_page,
         "reports": reports_page,
         "inventory": inventory_page,
         "users": users_page,
@@ -1690,7 +1828,10 @@ def route():
         handler()
     except Exception as exc:
         LOGGER.exception("Unhandled page error in %s", handler.__name__)
-        st.error("⚠️ حدث خطأ غير متوقع. تم تسجيل الخطأ تلقائياً.")
+        log_error(type(exc).__name__, "app.py", handler.__name__, str(exc))
+        st.error("⚠️ حدث خطأ غير متوقع أثناء تحميل هذه الصفحة. تم تسجيل الخطأ تلقائياً.")
+        if st.session_state.get("developer_diagnostic_mode") and st.session_state.get("role") == "admin":
+            st.exception(exc)
 
 
 route()
