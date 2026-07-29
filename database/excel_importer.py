@@ -416,6 +416,9 @@ def import_excel(
             continue
 
         subscription_number = clean_numeric_text(row.get("رقم الاشتراك", ""))
+
+    if not subscription_number:
+        subscription_number = "غير مسجل"
         raw_task_type = clean_text(row.get("نوع المهمة", ""))
         raw_task_status = clean_text(row.get("حالة المهمة", ""))
         task_type = normalize_task_type(raw_task_type)
