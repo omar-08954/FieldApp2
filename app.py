@@ -67,7 +67,7 @@ from database.database import (
     delete_tasks,
     update_user,
 )
-from database.excel_importer import import_excel
+from database.excel_importer import import_excel, RowError
 from database.notifications import (
     EVENT_LABELS,
     list_notifications,
@@ -972,7 +972,24 @@ def admin_page():
 
                         inserted_ids = bulk_add_tasks(rows_to_insert) if rows_to_insert else []
                         review_created = 0
-                        for task_id, issues in zip(inserted_ids, report.row_review_issues):
+                        db_failed = 0
+                        for i, (task_id, issues) in enumerate(zip(inserted_ids, report.row_review_issues)):
+                            if task_id is None:
+                                # فشل إدراج هذا الصف تحديداً داخل قاعدة البيانات (مثلاً
+                                # قيد بيانات). يُسجَّل كخطأ مفصَّل ولا يُفقد الصف صامتاً،
+                                # وتستمر بقية الصفوف بلا أي تأثر.
+                                db_failed += 1
+                                row_data = rows_to_insert[i]
+                                report.errors.append(RowError(
+                                    row_index=0,
+                                    raw_data={},
+                                    reason="فشل إدراج المهمة داخل قاعدة البيانات.",
+                                    suggestion="راجع بيانات هذا الصف يدوياً، أو أعد استيراده بعد التصحيح.",
+                                    task_number=row_data[1] if len(row_data) > 1 else "",
+                                    error_type="DatabaseInsertError",
+                                    action_taken="تم تجاوز إدراج هذا الصف فقط؛ استمر إدراج بقية الصفوف بدون توقف.",
+                                ))
+                                continue
                             for issue in issues:
                                 create_import_review(
                                     task_id,
@@ -984,49 +1001,62 @@ def admin_page():
                                 )
                                 review_created += 1
 
+                        actually_imported = sum(1 for tid in inserted_ids if tid is not None)
+
                         save_import_log(
                             uploaded.name, st.session_state.fullname, report.total_read,
-                            report.imported, report.error_count, report.needs_review_count,
+                            actually_imported, report.error_count, report.needs_review_count,
                             report.elapsed_seconds,
                             details=f"مطابقة فنيين: {report.match_success_rate * 100:.1f}%",
                         )
-                        if report.imported:
+                        if actually_imported:
                             log_action(
                                 st.session_state.fullname,
                                 "استيراد مهام",
-                                f"مستورد: {report.imported}, مكرر: {report.duplicated}, أخطاء: {report.error_count}, يحتاج مراجعة: {report.needs_review_count}",
+                                f"مستورد: {actually_imported}, مكرر: {report.duplicated}, أخطاء: {report.error_count}, يحتاج مراجعة: {report.needs_review_count}",
                             )
 
                     st.divider()
                     st.subheader("📊 تقرير الاستيراد")
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("إجمالي الصفوف المقروءة", report.total_read)
-                    m2.metric("✅ مستورد بنجاح", report.imported)
+                    m2.metric("✅ مستورد بنجاح", actually_imported)
                     m3.metric("⚠️ مكرر (تجاهل)", report.duplicated)
                     m4.metric("❌ أخطاء", report.error_count)
                     m5, m6, m7, m8 = st.columns(4)
-                    m5.metric("فنيون معروفون", report.recognized_technician_count)
-                    m6.metric("فنيون غير معروفين", report.unknown_technician_count)
-                    m7.metric("نسبة نجاح المطابقة", f"{report.match_success_rate * 100:.1f}%")
-                    m8.metric("🔍 يحتاج مراجعة", review_created)
+                    m5.metric("🛠️ تم إصلاحه تلقائياً", report.auto_fixed_count)
+                    m6.metric("🔍 يحتاج مراجعة", review_created)
+                    m7.metric("🗄️ فشل إدراج بقاعدة البيانات", db_failed)
+                    m8.metric("نسبة نجاح مطابقة الفنيين", f"{report.match_success_rate * 100:.1f}%")
+                    m9, m10, _m11, _m12 = st.columns(4)
+                    m9.metric("فنيون معروفون", report.recognized_technician_count)
+                    m10.metric("فنيون غير معروفين", report.unknown_technician_count)
 
-                    if report.imported > 0:
-                        st.success(f"✅ تمت إضافة {report.imported} مهمة بنجاح، منها {review_created} تحتاج مراجعة (راجع تبويب 🔍 مراجعة الاستيراد).")
+                    if actually_imported > 0:
+                        st.success(f"✅ تمت إضافة {actually_imported} مهمة بنجاح، منها {review_created} تحتاج مراجعة (راجع تبويب 🔍 مراجعة الاستيراد).")
                         notify_admins(
                             "import_review" if review_created else "import_success",
                             "استيراد Excel",
-                            f"تم استيراد {report.imported} مهمة من الملف \"{uploaded.name}\"" + (f"، منها {review_created} تحتاج مراجعة." if review_created else "."),
+                            f"تم استيراد {actually_imported} مهمة من الملف \"{uploaded.name}\"" + (f"، منها {review_created} تحتاج مراجعة." if review_created else "."),
                         )
 
                     if report.errors:
-                        with st.expander(f"❌ صفوف تم تجاوزها كلياً ({report.error_count})", expanded=False):
+                        with st.expander(f"❌ صفوف تم تجاوزها أو نُقلت لمراجعة يدوية ({report.error_count})", expanded=False):
                             st.dataframe(
-                                pd.DataFrame([{"رقم الصف": e.row_index, "سبب الرفض": e.reason, "طريقة الإصلاح": e.suggestion} for e in report.errors]),
+                                pd.DataFrame([{
+                                    "رقم الصف": e.row_index or "—",
+                                    "رقم المهمة": e.task_number or "—",
+                                    "نوع الخطأ": e.error_type or "—",
+                                    "العمود المسبب": e.column or "—",
+                                    "سبب الرفض": e.reason,
+                                    "الرسالة الأصلية": e.exception_message or "—",
+                                    "الإجراء المتخذ": e.action_taken or e.suggestion,
+                                } for e in report.errors]),
                                 hide_index=True, use_container_width=True,
                             )
 
                     st.session_state.pop("import_review_loaded", None)
-                    if report.imported > 0 and not report.errors:
+                    if actually_imported > 0 and not report.errors:
                         st.rerun()
         with col2:
             st.subheader("📤 تصدير Excel")

@@ -1,5 +1,6 @@
 from difflib import SequenceMatcher
 import datetime
+import logging
 import re
 import time
 
@@ -955,7 +956,13 @@ def bulk_add_tasks(rows):
     """إدراج جماعي دفعة واحدة. كل صف tuple:
     (technician, task_number, subscription_number, task_type, task_status, city,
     notes, execution_date [, needs_review, excel_technician_name, match_confidence,
-    suggested_technician])."""
+    suggested_technician]).
+
+    يُعيد قائمة inserted_ids بنفس طول rows وبنفس ترتيبه: id رقمي للصفوف التي
+    نجح إدراجها، أو None للصف الذي فشل إدراجه تحديداً. فشل إدراج صف واحد (قيد
+    قاعدة بيانات، بيانات غير متوقعة، ...) لا يوقف إدراج بقية الصفوف؛ كل صف
+    مَعزول داخل SAVEPOINT خاص به فيُسجَّل خطؤه ويُستكمل الباقي بدل إسقاط الدفعة
+    كاملة."""
     if not rows:
         return []
 
@@ -969,23 +976,36 @@ def bulk_add_tasks(rows):
         suggested = extras[3] if len(extras) > 3 else None
         normalized.append(base + (needs_review, excel_name, confidence, suggested))
 
-    inserted_ids: list[int] = []
+    inserted_ids: list = [None] * len(normalized)
 
     def _action(conn):
         cur = conn.cursor()
-        for row in normalized:
-            cur.execute(
-                """
-                INSERT INTO tasks
-                    (technician, task_number, subscription_number, task_type, task_status,
-                     city, notes, execution_date, needs_review, excel_technician_name,
-                     match_confidence, suggested_technician, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING id
-                """,
-                row,
-            )
-            inserted_ids.append(cur.fetchone()[0])
+        for i, row in enumerate(normalized):
+            try:
+                cur.execute("SAVEPOINT bulk_task_row")
+                cur.execute(
+                    """
+                    INSERT INTO tasks
+                        (technician, task_number, subscription_number, task_type, task_status,
+                         city, notes, execution_date, needs_review, excel_technician_name,
+                         match_confidence, suggested_technician, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    RETURNING id
+                    """,
+                    row,
+                )
+                inserted_ids[i] = cur.fetchone()[0]
+                cur.execute("RELEASE SAVEPOINT bulk_task_row")
+            except Exception as exc:
+                try:
+                    cur.execute("ROLLBACK TO SAVEPOINT bulk_task_row")
+                    cur.execute("RELEASE SAVEPOINT bulk_task_row")
+                except Exception:
+                    pass
+                logging.getLogger(__name__).warning(
+                    "bulk_add_tasks: فشل إدراج صف (رقم المهمة=%s): %s",
+                    row[1] if len(row) > 1 else "?", exc,
+                )
         conn.commit()
         cur.close()
 

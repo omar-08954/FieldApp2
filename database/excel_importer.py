@@ -94,11 +94,16 @@ CONTENT_BASED_COLUMNS: dict[str, list[str]] = {
 
 @dataclass
 class RowError:
-    """خطأ في صف واحد أثناء الاستيراد."""
+    """خطأ في صف واحد أثناء الاستيراد — لا يوقف بقية الصفوف أبداً."""
     row_index: int          # رقم الصف في الملف (يبدأ من 2 لأن الصف 1 هو العناوين)
     raw_data: dict          # البيانات الخام للصف
-    reason: str             # سبب الرفض
+    reason: str             # سبب الرفض (نص مختصر يُعرض للمستخدم)
     suggestion: str         # طريقة الإصلاح المقترحة
+    task_number: str = ""       # رقم المهمة إن أمكن قراءته قبل حدوث الخطأ
+    error_type: str = ""        # نوع الاستثناء الحقيقي (KeyError, ValueError, ...)
+    column: str = ""            # اسم العمود المسبب للمشكلة إن أمكن تحديده
+    exception_message: str = "" # الرسالة الأصلية للاستثناء كما رُفعت من بايثون
+    action_taken: str = ""      # الإجراء الذي اتُّخذ تلقائياً (إصلاح/نقل لمراجعة الاستيراد)
 
 
 @dataclass
@@ -121,6 +126,13 @@ class ImportReport:
     # معرفة الـ id الحقيقي للمهمة بعد الإدراج الجماعي. كل عنصر هو list[dict] بمفاتيح:
     # field, raw_value, suggested_value, confidence, reason.
     row_review_issues: list[list[dict]] = field(default_factory=list)
+    # أحداث الإصلاح التلقائي: كل مرة يُصادَف فيها استثناء أو نقص بيانات أثناء
+    # معالجة صف ويُنجح النظام في ترقيعه بقيمة افتراضية بدل إسقاط الصف بالكامل.
+    auto_fixed: list[dict] = field(default_factory=list)
+
+    @property
+    def auto_fixed_count(self) -> int:
+        return len(self.auto_fixed)
 
     @property
     def error_count(self) -> int:
@@ -405,117 +417,162 @@ def import_excel(
         if progress_callback:
             progress_callback(position + 1, total_rows)
 
-        task_number = clean_numeric_text(row.get("رقم المهمة", ""))
-        if not task_number:
-            report.errors.append(RowError(
-                row_index=file_row,
-                raw_data=dict(row),
-                reason="رقم المهمة فارغ.",
-                suggestion="أضف رقم المهمة في عمود 'رقم المهمة'.",
-            ))
-            continue
-
-        subscription_number = clean_numeric_text(row.get("رقم الاشتراك", ""))
-
-        if not subscription_number:
-            subscription_number = "غير مسجل"
-        raw_task_type = clean_text(row.get("نوع المهمة", ""))
-        raw_task_status = clean_text(row.get("حالة المهمة", ""))
-        task_type = normalize_task_type(raw_task_type)
-        task_status = normalize_task_status(raw_task_status)
-        raw_technician = clean_text(row.get("الفني", "")) or "غير محدد"
-
-        row_issues: list[dict] = []
-
-        match_result = match_technician(raw_technician, known_technicians, technician_threshold)
-        needs_review = match_result.needs_review
-        suggested = match_result.resolved_name if match_result.resolved_name else (match_result.candidates[0] if match_result.candidates else None)
-
-        if match_result.is_known and not needs_review:
-            resolved_technician = match_result.resolved_name
-            report.recognized_technicians.add(resolved_technician)
-        else:
-            resolved_technician = raw_technician
-            report.unknown_technicians.append({
-                "row": file_row,
-                "raw_name": raw_technician,
-                "warning": match_result.warning,
-                "candidates": match_result.candidates,
-                "confidence": match_result.confidence,
-                "suggested": suggested,
-            })
-            if match_result.warning:
+        # كل شيء داخل هذا try الخاص بالصف الواحد فقط: أي استثناء (KeyError أو
+        # غيره) يُلتقط هنا، يُسجَّل بتفصيل كامل، ولا يوقف استيراد بقية الصفوف
+        # مهما كان نوع الخطأ.
+        task_number = ""
+        try:
+            task_number = clean_numeric_text(row.get("رقم المهمة", ""))
+            if not task_number:
                 report.errors.append(RowError(
                     row_index=file_row,
                     raw_data=dict(row),
-                    reason=match_result.warning,
-                    suggestion="راجع تبويب مراجعة الاستيراد لاعتماد الفني الصحيح.",
+                    reason="رقم المهمة فارغ.",
+                    suggestion="أضف رقم المهمة في عمود 'رقم المهمة'.",
+                    task_number="",
+                    error_type="MissingValue",
+                    column="رقم المهمة",
+                    action_taken="تم تجاوز هذا الصف فقط؛ استمرت بقية الصفوف بالاستيراد.",
                 ))
-            row_issues.append({
-                "field": "technician",
-                "raw_value": raw_technician,
-                "suggested_value": suggested,
-                "confidence": match_result.confidence,
-                "reason": match_result.warning or "فني غير معروف.",
-            })
+                continue
 
-        # نفس فكرة مطابقة الفنيين تُطبَّق على أي قيمة متكررة أخرى: إذا كانت القيمة
-        # الخام موجودة في الملف لكنها لا تطابق أياً من القيم المعروفة، لا تُستبدل
-        # بصمت فقط، بل تُسجَّل أيضاً كمشكلة قابلة للمراجعة والتصحيح الجماعي.
-        if raw_task_type and _normalize_text(raw_task_type) not in {_normalize_text(v) for v in TASK_TYPE_VALUES}:
-            needs_review = True
-            row_issues.append({
-                "field": "task_type",
-                "raw_value": raw_task_type,
-                "suggested_value": task_type,
-                "confidence": None,
-                "reason": f"نوع مهمة غير معروف: \"{raw_task_type}\".",
-            })
+            # رقم الاشتراك: إذا كان العمود غير موجود أصلاً في الملف، أو موجوداً
+            # لكن قيمته فارغة/None/NaN/مسافات فقط، تتحول تلقائياً إلى "غير مسجل"
+            # بدل رفع أي خطأ أو ترك الحقل فارغاً.
+            subscription_number = clean_numeric_text(row.get("رقم الاشتراك", "")) or "غير مسجل"
+            raw_task_type = clean_text(row.get("نوع المهمة", ""))
+            raw_task_status = clean_text(row.get("حالة المهمة", ""))
+            task_type = normalize_task_type(raw_task_type)
+            task_status = normalize_task_status(raw_task_status)
+            raw_technician = clean_text(row.get("الفني", "")) or "غير محدد"
 
-        if raw_task_status and _normalize_text(raw_task_status) not in {_normalize_text(v) for v in TASK_STATUS_VALUES}:
-            needs_review = True
-            row_issues.append({
-                "field": "task_status",
-                "raw_value": raw_task_status,
-                "suggested_value": task_status,
-                "confidence": None,
-                "reason": f"حالة مهمة غير معروفة: \"{raw_task_status}\".",
-            })
+            row_issues: list[dict] = []
 
-        if resolved_technician in tech_city_map:
-            resolved_city = tech_city_map[resolved_technician]
-        else:
-            resolved_city = clean_text(row.get("المدينة", ""))
+            match_result = match_technician(raw_technician, known_technicians, technician_threshold)
+            needs_review = match_result.needs_review
+            suggested = match_result.resolved_name if match_result.resolved_name else (match_result.candidates[0] if match_result.candidates else None)
 
-        notes = clean_text(row.get("الملاحظات", ""))
+            if match_result.is_known and not needs_review:
+                resolved_technician = match_result.resolved_name
+                report.recognized_technicians.add(resolved_technician)
+            else:
+                resolved_technician = raw_technician
+                report.unknown_technicians.append({
+                    "row": file_row,
+                    "raw_name": raw_technician,
+                    "warning": match_result.warning,
+                    "candidates": match_result.candidates,
+                    "confidence": match_result.confidence,
+                    "suggested": suggested,
+                })
+                if match_result.warning:
+                    report.errors.append(RowError(
+                        row_index=file_row,
+                        raw_data=dict(row),
+                        reason=match_result.warning,
+                        suggestion="راجع تبويب مراجعة الاستيراد لاعتماد الفني الصحيح.",
+                        task_number=task_number,
+                        error_type="UnknownTechnician",
+                        column="الفني",
+                        action_taken="تم استيراد المهمة مع وضع علامة \"يحتاج مراجعة\".",
+                    ))
+                row_issues.append({
+                    "field": "technician",
+                    "raw_value": raw_technician,
+                    "suggested_value": suggested,
+                    "confidence": match_result.confidence,
+                    "reason": match_result.warning or "فني غير معروف.",
+                })
 
-        dup_key = _make_duplicate_key(
-            resolved_technician, task_number, subscription_number,
-            task_type, task_status, resolved_city,
-        )
-        if dup_key in existing_keys or dup_key in session_keys:
-            report.duplicated += 1
+            # نفس فكرة مطابقة الفنيين تُطبَّق على أي قيمة متكررة أخرى: إذا كانت القيمة
+            # الخام موجودة في الملف لكنها لا تطابق أياً من القيم المعروفة، لا تُستبدل
+            # بصمت فقط، بل تُسجَّل أيضاً كمشكلة قابلة للمراجعة والتصحيح الجماعي.
+            if raw_task_type and _normalize_text(raw_task_type) not in {_normalize_text(v) for v in TASK_TYPE_VALUES}:
+                needs_review = True
+                row_issues.append({
+                    "field": "task_type",
+                    "raw_value": raw_task_type,
+                    "suggested_value": task_type,
+                    "confidence": None,
+                    "reason": f"نوع مهمة غير معروف: \"{raw_task_type}\".",
+                })
+
+            if raw_task_status and _normalize_text(raw_task_status) not in {_normalize_text(v) for v in TASK_STATUS_VALUES}:
+                needs_review = True
+                row_issues.append({
+                    "field": "task_status",
+                    "raw_value": raw_task_status,
+                    "suggested_value": task_status,
+                    "confidence": None,
+                    "reason": f"حالة مهمة غير معروفة: \"{raw_task_status}\".",
+                })
+
+            if resolved_technician in tech_city_map:
+                resolved_city = tech_city_map[resolved_technician]
+            else:
+                resolved_city = clean_text(row.get("المدينة", ""))
+
+            notes = clean_text(row.get("الملاحظات", ""))
+
+            dup_key = _make_duplicate_key(
+                resolved_technician, task_number, subscription_number,
+                task_type, task_status, resolved_city,
+            )
+            if dup_key in existing_keys or dup_key in session_keys:
+                report.duplicated += 1
+                continue
+
+            session_keys.add(dup_key)
+            rows_to_insert.append((
+                resolved_technician,
+                task_number,
+                subscription_number,
+                task_type,
+                task_status,
+                resolved_city,
+                notes,
+                today,
+                needs_review,
+                raw_technician,
+                match_result.confidence,
+                suggested,
+            ))
+            report.row_review_issues.append(row_issues)
+            report.imported += 1
+            if needs_review:
+                report.needs_review_count += 1
+
+        except KeyError as exc:
+            # عمود متوقَّع غير موجود ضمن بيانات هذا الصف تحديداً. يُسجَّل بكامل
+            # التفاصيل (اسم العمود المفقود، رقم المهمة إن وُجد) ثم يُستكمل باقي
+            # الصفوف دون توقف — لا يُسمح إطلاقاً بخروج KeyError للمستخدم.
+            missing_column = str(exc).strip("'\" ")
+            report.errors.append(RowError(
+                row_index=file_row,
+                raw_data=dict(row) if row is not None else {},
+                reason=f"عمود مفقود أثناء معالجة الصف: {missing_column}",
+                suggestion="تحقق من وجود جميع الأعمدة المطلوبة في هذا الصف بالذات.",
+                task_number=task_number,
+                error_type="KeyError",
+                column=missing_column,
+                exception_message=str(exc),
+                action_taken="تم نقل الصف إلى مراجعة الاستيراد؛ استمر استيراد بقية الصفوف بدون انقطاع.",
+            ))
             continue
-
-        session_keys.add(dup_key)
-        rows_to_insert.append((
-            resolved_technician,
-            task_number,
-            subscription_number,
-            task_type,
-            task_status,
-            resolved_city,
-            notes,
-            today,
-            needs_review,
-            raw_technician,
-            match_result.confidence,
-            suggested,
-        ))
-        report.row_review_issues.append(row_issues)
-        report.imported += 1
-        if needs_review:
-            report.needs_review_count += 1
+        except Exception as exc:
+            # أي خطأ آخر غير متوقع في هذا الصف فقط (وليس في الملف كله). يُسجَّل
+            # بنفس التفصيل ثم يُستكمل الاستيراد لبقية الصفوف بشكل طبيعي.
+            report.errors.append(RowError(
+                row_index=file_row,
+                raw_data=dict(row) if row is not None else {},
+                reason=f"خطأ غير متوقع أثناء معالجة الصف: {exc}",
+                suggestion="راجع بيانات هذا الصف يدوياً داخل ملف Excel.",
+                task_number=task_number,
+                error_type=type(exc).__name__,
+                exception_message=str(exc),
+                action_taken="تم نقل الصف إلى مراجعة الاستيراد؛ استمر استيراد بقية الصفوف بدون انقطاع.",
+            ))
+            continue
 
     report.elapsed_seconds = time.perf_counter() - started
     return rows_to_insert, report
