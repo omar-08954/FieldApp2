@@ -65,13 +65,15 @@ def notify_user(
     *,
     show_toast_now: bool = False,
     toast_icon: str = "ℹ️",
+    actor: str | None = None,
 ) -> None:
     if not username:
         return
     if not get_user_notification_setting(username):
         return
+    resolved_actor = actor if actor is not None else (st.session_state.get("fullname") or None)
     try:
-        create_notification(username, event_type, title, message)
+        create_notification(username, event_type, title, message, actor=resolved_actor)
     except Exception as exc:
         LOGGER.warning("Notification create failed: %s", exc)
         return
@@ -79,12 +81,12 @@ def notify_user(
         show_toast(message, toast_icon)
 
 
-def notify_admins(event_type: str, title: str, message: str, *, toast_icon: str = "ℹ️") -> None:
+def notify_admins(event_type: str, title: str, message: str, *, toast_icon: str = "ℹ️", actor: str | None = None) -> None:
     from database.database import get_all_users
 
     for user in get_all_users():
         if user.get("role") == "admin":
-            notify_user(user["username"], event_type, title, message, toast_icon=toast_icon)
+            notify_user(user["username"], event_type, title, message, toast_icon=toast_icon, actor=actor)
 
 
 def notify_technician_by_name(
@@ -94,12 +96,13 @@ def notify_technician_by_name(
     message: str,
     *,
     toast_icon: str = "ℹ️",
+    actor: str | None = None,
 ) -> None:
     from database.database import get_all_users
 
     for user in get_all_users():
         if user.get("role") == "technician" and user.get("fullname") == fullname:
-            notify_user(user["username"], event_type, title, message, toast_icon=toast_icon)
+            notify_user(user["username"], event_type, title, message, toast_icon=toast_icon, actor=actor)
 
 
 def get_badge_count(username: str | None = None) -> int:

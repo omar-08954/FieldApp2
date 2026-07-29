@@ -116,6 +116,11 @@ class ImportReport:
     file_name: str = ""
     username: str = ""
     imported_at: datetime.datetime | None = None
+    # قائمة مشاكل عامة لكل صف تم استيراده، بنفس ترتيب rows_to_insert، حتى يستطيع
+    # المستدعي (app.py) إنشاء سجل "مراجعة استيراد" واحد أو أكثر لكل صف بمجرد
+    # معرفة الـ id الحقيقي للمهمة بعد الإدراج الجماعي. كل عنصر هو list[dict] بمفاتيح:
+    # field, raw_value, suggested_value, confidence, reason.
+    row_review_issues: list[list[dict]] = field(default_factory=list)
 
     @property
     def error_count(self) -> int:
@@ -411,9 +416,13 @@ def import_excel(
             continue
 
         subscription_number = clean_numeric_text(row.get("رقم الاشتراك", ""))
-        task_type = normalize_task_type(row.get("نوع المهمة", ""))
-        task_status = normalize_task_status(row.get("حالة المهمة", ""))
+        raw_task_type = clean_text(row.get("نوع المهمة", ""))
+        raw_task_status = clean_text(row.get("حالة المهمة", ""))
+        task_type = normalize_task_type(raw_task_type)
+        task_status = normalize_task_status(raw_task_status)
         raw_technician = clean_text(row.get("الفني", "")) or "غير محدد"
+
+        row_issues: list[dict] = []
 
         match_result = match_technician(raw_technician, known_technicians, technician_threshold)
         needs_review = match_result.needs_review
@@ -439,6 +448,36 @@ def import_excel(
                     reason=match_result.warning,
                     suggestion="راجع تبويب مراجعة الاستيراد لاعتماد الفني الصحيح.",
                 ))
+            row_issues.append({
+                "field": "technician",
+                "raw_value": raw_technician,
+                "suggested_value": suggested,
+                "confidence": match_result.confidence,
+                "reason": match_result.warning or "فني غير معروف.",
+            })
+
+        # نفس فكرة مطابقة الفنيين تُطبَّق على أي قيمة متكررة أخرى: إذا كانت القيمة
+        # الخام موجودة في الملف لكنها لا تطابق أياً من القيم المعروفة، لا تُستبدل
+        # بصمت فقط، بل تُسجَّل أيضاً كمشكلة قابلة للمراجعة والتصحيح الجماعي.
+        if raw_task_type and _normalize_text(raw_task_type) not in {_normalize_text(v) for v in TASK_TYPE_VALUES}:
+            needs_review = True
+            row_issues.append({
+                "field": "task_type",
+                "raw_value": raw_task_type,
+                "suggested_value": task_type,
+                "confidence": None,
+                "reason": f"نوع مهمة غير معروف: \"{raw_task_type}\".",
+            })
+
+        if raw_task_status and _normalize_text(raw_task_status) not in {_normalize_text(v) for v in TASK_STATUS_VALUES}:
+            needs_review = True
+            row_issues.append({
+                "field": "task_status",
+                "raw_value": raw_task_status,
+                "suggested_value": task_status,
+                "confidence": None,
+                "reason": f"حالة مهمة غير معروفة: \"{raw_task_status}\".",
+            })
 
         if resolved_technician in tech_city_map:
             resolved_city = tech_city_map[resolved_technician]
@@ -470,6 +509,7 @@ def import_excel(
             match_result.confidence,
             suggested,
         ))
+        report.row_review_issues.append(row_issues)
         report.imported += 1
         if needs_review:
             report.needs_review_count += 1

@@ -703,6 +703,11 @@ def create_tables():
         )
         """
     )
+    # issue_field يعمم جدول المراجعة ليشمل أي حقل متكرر (الفني، نوع المهمة، حالة
+    # المهمة، ...) وليس فقط الفني: العمودان excel_technician_name/suggested_technician
+    # يُعاد استخدامهما بمعنى "القيمة الخام" و"القيمة المقترحة" لأي حقل، حتى لا
+    # يتطلب الأمر تغيير هيكل الجدول بالكامل.
+    cur.execute("ALTER TABLE import_reviews ADD COLUMN IF NOT EXISTS issue_field TEXT NOT NULL DEFAULT 'technician'")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS notifications (
@@ -716,7 +721,10 @@ def create_tables():
         )
         """
     )
+    # actor: اسم المستخدم الذي تسبب في الإشعار، يُعرض في مركز الإشعارات.
+    cur.execute("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS actor TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_import_reviews_status ON import_reviews(status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_import_reviews_issue_field ON import_reviews(issue_field)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_username ON notifications(username)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(username, is_read)")
 
@@ -1641,72 +1649,134 @@ def get_import_logs(limit=100):
     )
 
 
-def create_import_review(task_id, excel_technician_name, suggested_technician=None, match_confidence=None, issue_reason=""):
+# الحقول المسموح تصحيحها جماعياً من جدول مراجعة الاستيراد. القيم هنا أسماء
+# أعمدة حقيقية في جدول tasks فقط (whitelist) لمنع أي حقن SQL عبر issue_field.
+REVIEW_FIELD_COLUMNS = {
+    "technician": "technician",
+    "task_type": "task_type",
+    "task_status": "task_status",
+    "city": "city",
+}
+
+
+def create_import_review(task_id, issue_field, raw_value, suggested_value=None, match_confidence=None, issue_reason=""):
+    """إنشاء سجل مراجعة عام لأي حقل متكرر (وليس الفني فقط). excel_technician_name
+    و suggested_technician يُعاد استخدامهما هنا بمعنى (القيمة الخام / القيمة
+    المقترحة) الخاصين بـ issue_field تحديداً."""
+    field = issue_field if issue_field in REVIEW_FIELD_COLUMNS else "technician"
     execute(
         """
         INSERT INTO import_reviews
-            (task_id, excel_technician_name, suggested_technician, match_confidence, issue_reason, status)
-        VALUES (%s, %s, %s, %s, %s, 'pending')
+            (task_id, issue_field, excel_technician_name, suggested_technician, match_confidence, issue_reason, status)
+        VALUES (%s, %s, %s, %s, %s, %s, 'pending')
         """,
-        (int(task_id), excel_technician_name, suggested_technician, match_confidence, issue_reason),
+        (int(task_id), field, raw_value, suggested_value, match_confidence, issue_reason),
     )
 
 
 def get_pending_import_reviews(keyword=""):
+    """كل المهام التي تحتاج مراجعة، مع بحث فوري يغطي كل بيانات المهمة (رقم
+    المهمة، رقم الاشتراك، اسم الفني، نوع المهمة، حالة المهمة، المدينة، الملاحظات،
+    القيمة الخام والمقترحة، وسبب المشكلة) وليس رقم المهمة فقط."""
     keyword = (keyword or "").strip()
-    if keyword:
-        like = f"%{keyword}%"
-        return fetch_all(
-            """
-            SELECT r.id, r.task_id, r.excel_technician_name, r.suggested_technician,
-                   r.match_confidence, r.issue_reason, r.status, r.created_at,
-                   t.task_number, t.subscription_number, t.task_type, t.task_status, t.city
-            FROM import_reviews r
-            JOIN tasks t ON t.id = r.task_id
-            WHERE r.status = 'pending'
-              AND (r.excel_technician_name ILIKE %s OR COALESCE(r.suggested_technician, '') ILIKE %s
-                   OR t.task_number ILIKE %s)
-            ORDER BY r.id DESC
-            """,
-            (like, like, like),
-        )
-    return fetch_all(
-        """
-        SELECT r.id, r.task_id, r.excel_technician_name, r.suggested_technician,
+    base_sql = """
+        SELECT r.id, r.task_id, r.issue_field,
+               r.excel_technician_name AS raw_value, r.suggested_technician AS suggested_value,
                r.match_confidence, r.issue_reason, r.status, r.created_at,
-               t.task_number, t.subscription_number, t.task_type, t.task_status, t.city
+               t.technician, t.task_number, t.subscription_number, t.task_type,
+               t.task_status, t.city, t.notes
         FROM import_reviews r
         JOIN tasks t ON t.id = r.task_id
         WHERE r.status = 'pending'
-        ORDER BY r.id DESC
+    """
+    params: tuple = ()
+    if keyword:
+        like = f"%{keyword}%"
+        base_sql += """
+          AND (
+                r.excel_technician_name ILIKE %s OR COALESCE(r.suggested_technician, '') ILIKE %s
+                OR COALESCE(r.issue_reason, '') ILIKE %s OR t.technician ILIKE %s
+                OR t.task_number ILIKE %s OR t.subscription_number ILIKE %s
+                OR t.task_type ILIKE %s OR t.task_status ILIKE %s
+                OR COALESCE(t.city, '') ILIKE %s OR COALESCE(t.notes, '') ILIKE %s
+              )
         """
+        params = tuple([like] * 10)
+    base_sql += " ORDER BY r.id DESC"
+    return fetch_all(base_sql, params)
+
+
+def apply_review_fix_and_propagate(review_id, new_value, resolved_by=""):
+    """تصحيح سجل مراجعة واحد، والبحث تلقائياً عن كل سجلات المراجعة المعلّقة
+    الأخرى التي تحمل نفس المشكلة بالضبط (نفس الحقل ونفس القيمة الخاطئة)، وتطبيق
+    نفس التصحيح عليها جميعاً، وإزالتها من قائمة المراجعة، مع إبقاء أي مهمة ما
+    زالت تحتوي على مشاكل أخرى غير محلولة. تُعيد عدد السجلات التي تم حلها."""
+    new_value = (new_value or "").strip()
+    if not new_value:
+        return 0
+
+    review = fetch_one(
+        "SELECT id, task_id, issue_field, excel_technician_name AS raw_value FROM import_reviews WHERE id = %s",
+        (int(review_id),),
     )
+    if not review:
+        return 0
+
+    field = review.get("issue_field") or "technician"
+    column = REVIEW_FIELD_COLUMNS.get(field, "technician")
+    raw_value = (review.get("raw_value") or "").strip()
+
+    matches = fetch_all(
+        "SELECT id, task_id FROM import_reviews WHERE status = 'pending' AND issue_field = %s AND excel_technician_name = %s",
+        (field, raw_value),
+    )
+    match_ids = {int(m["id"]) for m in matches}
+    match_ids.add(int(review_id))
+    task_ids = {int(m["task_id"]) for m in matches}
+    task_ids.add(int(review["task_id"]))
+
+    for task_id in task_ids:
+        execute(
+            f"UPDATE tasks SET {column} = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (new_value, task_id),
+        )
+
+    for rid in match_ids:
+        execute(
+            "UPDATE import_reviews SET status = 'approved', resolved_at = CURRENT_TIMESTAMP, resolved_by = %s WHERE id = %s",
+            ((resolved_by or "").strip(), rid),
+        )
+
+    # إزالة علامة "يحتاج مراجعة" فقط عن المهام التي لم يعد لها أي سجل مراجعة معلّق
+    # (قد تحتوي المهمة الواحدة على أكثر من مشكلة، مثل فني غير معروف مع نوع مهمة
+    # غير معروف في نفس الصف).
+    for task_id in task_ids:
+        remaining = fetch_one(
+            "SELECT COUNT(*) AS n FROM import_reviews WHERE task_id = %s AND status = 'pending'",
+            (task_id,),
+        )
+        if remaining and int(remaining["n"]) == 0:
+            execute("UPDATE tasks SET needs_review = FALSE WHERE id = %s", (task_id,))
+
+    _invalidate_cache()
+    return len(match_ids)
 
 
 def approve_import_review(review_id, technician_name, resolved_by=""):
-    execute(
-        """
-        UPDATE tasks SET technician = %s, needs_review = FALSE, updated_at = CURRENT_TIMESTAMP
-        WHERE id = (SELECT task_id FROM import_reviews WHERE id = %s)
-        """,
-        (technician_name.strip(), int(review_id)),
-    )
-    execute(
-        """
-        UPDATE import_reviews
-        SET status = 'approved', resolved_at = CURRENT_TIMESTAMP, resolved_by = %s
-        WHERE id = %s
-        """,
-        ((resolved_by or "").strip(), int(review_id)),
-    )
-    _invalidate_cache()
+    """يبقى بنفس التوقيع القديم للتوافق: اعتماد فني لمراجعة واحدة، مع التطبيق
+    التلقائي على كل المهام الأخرى التي تحمل نفس اسم الفني الخام (انظر
+    apply_review_fix_and_propagate)."""
+    apply_review_fix_and_propagate(review_id, technician_name, resolved_by)
 
 
 def bulk_approve_import_reviews(review_ids, resolved_by=""):
     for review_id in review_ids:
-        row = fetch_one("SELECT id, suggested_technician FROM import_reviews WHERE id = %s AND status = 'pending'", (int(review_id),))
+        row = fetch_one(
+            "SELECT id, suggested_technician FROM import_reviews WHERE id = %s AND status = 'pending'",
+            (int(review_id),),
+        )
         if row and row.get("suggested_technician"):
-            approve_import_review(row["id"], row["suggested_technician"], resolved_by)
+            apply_review_fix_and_propagate(row["id"], row["suggested_technician"], resolved_by)
 
 
 def get_user_notification_setting(username):
@@ -1723,13 +1793,13 @@ def set_user_notification_setting(username, enabled):
     )
 
 
-def create_notification(username, event_type, title, message):
+def create_notification(username, event_type, title, message, actor=None):
     execute(
         """
-        INSERT INTO notifications (username, event_type, title, message, is_read)
-        VALUES (%s, %s, %s, %s, FALSE)
+        INSERT INTO notifications (username, event_type, title, message, actor, is_read)
+        VALUES (%s, %s, %s, %s, %s, FALSE)
         """,
-        ((username or "").strip(), event_type, title, message),
+        ((username or "").strip(), event_type, title, message, (actor or "").strip() or None),
     )
 
 
@@ -1740,13 +1810,13 @@ def get_user_notifications(username, unread_only=False, keyword=""):
         clauses.append("is_read = FALSE")
     keyword = (keyword or "").strip()
     if keyword:
-        clauses.append("(title ILIKE %s OR message ILIKE %s)")
+        clauses.append("(title ILIKE %s OR message ILIKE %s OR COALESCE(actor, '') ILIKE %s OR event_type ILIKE %s)")
         like = f"%{keyword}%"
-        params.extend([like, like])
+        params.extend([like, like, like, like])
     where = " AND ".join(clauses)
     return fetch_all(
         f"""
-        SELECT id, event_type, title, message, is_read, created_at
+        SELECT id, event_type, title, message, is_read, created_at, actor
         FROM notifications WHERE {where}
         ORDER BY id DESC LIMIT 500
         """,

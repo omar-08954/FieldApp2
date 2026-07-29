@@ -13,6 +13,7 @@ from database.database import (
     add_material,
     add_task,
     add_user,
+    apply_review_fix_and_propagate,
     approve_import_review,
     assign_task,
     assigned_task_number_exists,
@@ -68,6 +69,7 @@ from database.database import (
 )
 from database.excel_importer import import_excel
 from database.notifications import (
+    EVENT_LABELS,
     list_notifications,
     mark_all_read,
     mark_read,
@@ -592,21 +594,36 @@ def _completed_tasks_view(technician_filter, key_prefix):
     _export_results_button(results, "المهام_المنفذة.xlsx", f"{key_prefix}_export")
 
 
+ISSUE_FIELD_LABELS = {
+    "technician": "الفني",
+    "task_type": "نوع المهمة",
+    "task_status": "حالة المهمة",
+    "city": "المدينة",
+}
+
+
 def _import_review_tab(technicians_df):
     st.subheader("🔍 مراجعة الاستيراد")
+    st.caption("كل مهمة هنا استُوردت بالفعل ولم تُفقد؛ فقط بها قيمة (فني/نوع/حالة) لم يتعرف عليها النظام بثقة كافية. "
+               "تصحيح أي قيمة يطبَّق تلقائياً على كل المهام الأخرى التي بها نفس الخطأ بالضبط.")
     technicians_only = technicians_df[technicians_df["role"] == "technician"] if not technicians_df.empty else technicians_df
     technician_names = sorted(technicians_only["fullname"].tolist()) if not technicians_only.empty else []
 
     with st.form("import_review_filter_form"):
         col1, col2 = st.columns([3, 1])
         with col1:
-            keyword = st.text_input("بحث", placeholder="اسم الفني، رقم المهمة...")
+            keyword = st.text_input(
+                "بحث فوري",
+                placeholder="رقم المهمة، رقم الاشتراك، اسم الفني، نوع/حالة المهمة، المدينة...",
+                key="import_review_keyword_input",
+            )
         with col2:
             refresh = st.form_submit_button("🔄 تحديث", use_container_width=True)
 
     if refresh or "import_review_loaded" not in st.session_state:
-        st.session_state["import_review_rows"] = get_pending_import_reviews(keyword if refresh else st.session_state.get("import_review_keyword", ""))
-        st.session_state["import_review_keyword"] = keyword if refresh else st.session_state.get("import_review_keyword", "")
+        st.session_state["import_review_rows"] = get_pending_import_reviews(keyword)
+        st.session_state["import_review_keyword"] = keyword
+        st.session_state["import_review_loaded"] = True
 
     reviews = st.session_state.get("import_review_rows", get_pending_import_reviews())
     if not reviews:
@@ -616,71 +633,107 @@ def _import_review_tab(technicians_df):
     display_rows = []
     for row in reviews:
         confidence = row.get("match_confidence")
+        field = row.get("issue_field") or "technician"
         display_rows.append({
             "review_id": row["id"],
-            "task_id": row["task_id"],
-            "excel_technician_name": row["excel_technician_name"],
-            "suggested_technician": row.get("suggested_technician") or "",
+            "issue_field": ISSUE_FIELD_LABELS.get(field, field),
+            "raw_value": row.get("raw_value") or "",
+            "suggested_value": row.get("suggested_value") or "",
             "match_confidence": f"{confidence:.0%}" if confidence is not None else "—",
             "issue_reason": row.get("issue_reason") or "",
+            "technician": row.get("technician") or "",
             "task_number": row.get("task_number") or "",
+            "subscription_number": row.get("subscription_number") or "",
+            "task_type": row.get("task_type") or "",
+            "task_status": row.get("task_status") or "",
             "city": row.get("city") or "",
+            "_field_raw": field,
         })
 
-    review_df = pd.DataFrame(display_rows)
+    review_df = pd.DataFrame(display_rows).drop(columns=["_field_raw"])
     edited = st.data_editor(
         review_df,
         hide_index=True,
         use_container_width=True,
         column_config={
             "review_id": st.column_config.NumberColumn("المعرف", disabled=True),
-            "excel_technician_name": st.column_config.TextColumn("اسم Excel", disabled=True),
-            "suggested_technician": st.column_config.TextColumn("الفني المقترح"),
+            "issue_field": st.column_config.TextColumn("الحقل المتأثر", disabled=True),
+            "raw_value": st.column_config.TextColumn("القيمة الخام (من Excel)", disabled=True),
+            "suggested_value": st.column_config.TextColumn("✏️ القيمة الصحيحة"),
             "match_confidence": st.column_config.TextColumn("درجة التطابق", disabled=True),
             "issue_reason": st.column_config.TextColumn("سبب المشكلة", disabled=True),
+            "technician": st.column_config.TextColumn("الفني الحالي", disabled=True),
             "task_number": st.column_config.TextColumn("رقم المهمة", disabled=True),
+            "subscription_number": st.column_config.TextColumn("رقم الاشتراك", disabled=True),
+            "task_type": st.column_config.TextColumn("نوع المهمة", disabled=True),
+            "task_status": st.column_config.TextColumn("حالة المهمة", disabled=True),
             "city": st.column_config.TextColumn("المدينة", disabled=True),
         },
         key="import_review_editor",
     )
+
+    # تعديل تلقائي: أي صف عدّل المستخدم فيه "القيمة الصحيحة" مباشرة داخل الجدول
+    # يُطبَّق فوراً، ويُبحث عن كل المهام الأخرى التي بها نفس القيمة الخاطئة بنفس
+    # الحقل ويُصحَّح لها تلقائياً، ثم تُحذف كل المهام الناجحة من جدول المراجعة.
+    changed = []
+    for i, new_row in edited.iterrows():
+        old_value = display_rows[i]["suggested_value"]
+        new_value = (new_row["suggested_value"] or "").strip()
+        if new_value and new_value != old_value:
+            changed.append((int(new_row["review_id"]), new_value))
+
+    if changed:
+        total_resolved = 0
+        for review_id, new_value in changed:
+            total_resolved += apply_review_fix_and_propagate(review_id, new_value, st.session_state.fullname)
+        notify_admins("import_review", "تصحيح مراجعة استيراد", f"تم تصحيح {len(changed)} قيمة وتطبيقها تلقائياً على {total_resolved} مهمة مشابهة.")
+        show_toast(f"✅ تم التصحيح التلقائي لـ {total_resolved} مهمة.", "✅")
+        st.session_state.pop("import_review_loaded", None)
+        st.rerun()
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         approve_all = st.button("✅ اعتماد جماعي (المقترح)", use_container_width=True)
     with col_b:
         selected_review = st.selectbox(
-            "اختر للاعتماد",
-            [f"#{r['review_id']} — {r['excel_technician_name']}" for r in display_rows],
+            "اختر للاعتماد اليدوي",
+            [f"#{r['review_id']} — {r['issue_field']}: {r['raw_value']}" for r in display_rows],
             key="import_review_select",
         )
     with col_c:
-        manual_tech = st.selectbox("فني بديل", technician_names or ["—"], key="import_review_manual_tech")
+        manual_value = st.selectbox("فني بديل (عند الحاجة)", technician_names or ["—"], key="import_review_manual_tech")
 
     c1, c2 = st.columns(2)
     with c1:
-        approve_one = st.button("✅ اعتماد المحدد", use_container_width=True)
+        approve_one = st.button("✅ اعتماد المحدد بالمقترح", use_container_width=True)
     with c2:
-        approve_manual = st.button("✏️ اعتماد بالفني البديل", use_container_width=True)
+        approve_manual = st.button("✏️ اعتماد المحدد بالفني البديل", use_container_width=True)
 
     if approve_all:
-        bulk_approve_import_reviews([r["review_id"] for r in display_rows], st.session_state.fullname)
-        notify_admins("import_review", "مراجعة استيراد", f"تم اعتماد {len(display_rows)} مهمة جماعياً.")
-        show_toast(f"✅ تم اعتماد {len(display_rows)} مهمة.", "✅")
+        resolved = 0
+        for r in display_rows:
+            if r["suggested_value"]:
+                resolved += apply_review_fix_and_propagate(r["review_id"], r["suggested_value"], st.session_state.fullname)
+        notify_admins("import_review", "مراجعة استيراد", f"تم اعتماد {resolved} مهمة جماعياً.")
+        show_toast(f"✅ تم اعتماد {resolved} مهمة.", "✅")
         st.success("تم الاعتماد الجماعي.")
+        st.session_state.pop("import_review_loaded", None)
         st.rerun()
 
     if approve_one and selected_review:
         review_id = int(selected_review.split("—")[0].replace("#", "").strip())
         row = next((r for r in display_rows if r["review_id"] == review_id), None)
-        if row and row.get("suggested_technician"):
-            approve_import_review(review_id, row["suggested_technician"], st.session_state.fullname)
-            show_toast("✅ تم اعتماد المهمة.", "✅")
+        if row and row.get("suggested_value"):
+            resolved = apply_review_fix_and_propagate(review_id, row["suggested_value"], st.session_state.fullname)
+            show_toast(f"✅ تم اعتماد {resolved} مهمة.", "✅")
+            st.session_state.pop("import_review_loaded", None)
             st.rerun()
 
     if approve_manual and selected_review and technician_names:
         review_id = int(selected_review.split("—")[0].replace("#", "").strip())
-        approve_import_review(review_id, manual_tech, st.session_state.fullname)
-        show_toast("✅ تم اعتماد المهمة بالفني البديل.", "✅")
+        resolved = apply_review_fix_and_propagate(review_id, manual_value, st.session_state.fullname)
+        show_toast(f"✅ تم اعتماد {resolved} مهمة بالفني البديل.", "✅")
+        st.session_state.pop("import_review_loaded", None)
         st.rerun()
 
 
@@ -720,7 +773,14 @@ def _notifications_center_tab():
         status = "🟢" if not item.get("is_read") else "⚪"
         with st.container(border=True):
             st.markdown(f"**{status} {item.get('title', '')}**")
-            st.caption(str(item.get("created_at", "")))
+            meta = str(item.get("created_at", ""))
+            actor = item.get("actor")
+            if actor:
+                meta += f" · بواسطة {actor}"
+            event_type = EVENT_LABELS.get(item.get("event_type"), item.get("event_type"))
+            if event_type:
+                meta += f" · {event_type}"
+            st.caption(meta)
             st.write(item.get("message", ""))
             b1, b2 = st.columns(2)
             with b1:
@@ -741,8 +801,10 @@ def admin_page():
         df = as_df(search_tasks(), ["id", "technician", "task_number", "subscription_number", "task_type", "task_status"])
         technicians_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city"])
 
-    tab_manage, tab_assign, tab_data, tab_transfer, tab_task_reports, tab_daily_tasks, tab_assigned_tasks = st.tabs(
-        ["📋 إدارة المهام", "📌 إسناد مهمة", "✏️ إدارة البيانات", "📥 الاستيراد والتصدير", "📷 تقارير المهام", "📅 المهام اليومية", "📋 المهام المسندة"]
+    pending_review_count = len(get_pending_import_reviews())
+    review_tab_label = f"🔍 مراجعة الاستيراد ({pending_review_count})" if pending_review_count else "🔍 مراجعة الاستيراد"
+    tab_manage, tab_assign, tab_data, tab_transfer, tab_review, tab_task_reports, tab_daily_tasks, tab_assigned_tasks = st.tabs(
+        ["📋 إدارة المهام", "📌 إسناد مهمة", "✏️ إدارة البيانات", "📥 الاستيراد والتصدير", review_tab_label, "📷 تقارير المهام", "📅 المهام اليومية", "📋 المهام المسندة"]
     )
     with tab_manage:
         total = len(df)
@@ -870,85 +932,101 @@ def admin_page():
                     st.error(f"❌ الملف يحتوي على {len(incoming)} صف، والحد الأقصى المسموح به لكل استيراد هو 20,000 صف. يرجى تقسيم الملف.")
                     incoming = incoming.iloc[0:0]
                 # مطابقة أسماء الأعمدة تلقائياً (بالاسم أو بمحتوى العمود) حتى لو اختلفت عن الأسماء المتوقعة
-                column_map = resolve_column_mapping(incoming.columns, incoming)
+                column_map = resolve_column_mapping(incoming.columns.tolist(), incoming)
+                preview_df = incoming.rename(columns=column_map) if column_map else incoming
                 if column_map:
-                    incoming = incoming.rename(columns=column_map)
-                columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in incoming.columns]
-                st.dataframe(incoming[columns].head(20), hide_index=True, use_container_width=True)
+                    with st.expander("🔍 خريطة الأعمدة المكتشفة تلقائياً", expanded=False):
+                        st.dataframe(
+                            pd.DataFrame([{"عمود الملف": k, "اسم قياسي": v} for k, v in column_map.items()]),
+                            hide_index=True, use_container_width=True,
+                        )
+                columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in preview_df.columns]
+                st.dataframe(preview_df[columns].head(20) if columns else preview_df.head(20), hide_index=True, use_container_width=True)
                 with st.form("import_tasks_form"):
                     confirm_import = st.form_submit_button("بدء الاستيراد", use_container_width=True)
                 if confirm_import:
-                    added = duplicated = skipped_ambiguous = 0
-                    import_warnings = []
                     with timed_spinner("جاري استيراد البيانات..."):
-                        # استخدام البيانات المجلوبة بالفعل بدل تكرار الاستعلام عن كل رقم مهمة
-                        existing_numbers = set(df["task_number"].astype(str)) if not df.empty else set()
                         technicians_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city", "created_at"])
-                        if not technicians_df.empty:
-                            technicians_only = technicians_df[technicians_df["role"] == "technician"]
-                            technician_names = technicians_only["fullname"].tolist()
-                            technician_city_map = {
-                                row["fullname"]: (row.get("city") or "") for _, row in technicians_only.iterrows()
-                            }
-                        else:
-                            technician_names, technician_city_map = [], {}
+                        technicians_only = [
+                            {"fullname": r["fullname"], "city": r.get("city") or ""}
+                            for r in (get_all_users() or [])
+                            if r.get("role") == "technician"
+                        ]
+                        existing_tasks_list = [
+                            {"technician": r["technician"], "task_number": r["task_number"],
+                             "subscription_number": r["subscription_number"], "task_type": r["task_type"],
+                             "task_status": r["task_status"], "city": r.get("city") or ""}
+                            for r in (search_tasks() or [])
+                        ]
 
-                        rows_to_insert = []
-                        today = datetime.date.today()
-                        for row_index, row in incoming.iterrows():
-                            number = str(row.get("رقم المهمة", "")).strip()
-                            if not number or number in existing_numbers:
-                                duplicated += 1
-                                continue
-                            raw_technician = str(row.get("الفني", "")).strip() or "غير محدد"
-                            # مطابقة ذكية لاسم الفني: تطابق الاسم الأول، ثم الاسم
-                            # الثاني عند التعارض. إذا تعذّر الفصل يُسجَّل تحذير
-                            # ويُتجاوز هذا السطر فقط دون إيقاف الاستيراد بالكامل.
-                            resolved_technician, ambiguity_warning = match_import_technician(raw_technician, technician_names)
-                            if ambiguity_warning:
-                                import_warnings.append(f"صف {row_index + 2}: {ambiguity_warning}")
-                                skipped_ambiguous += 1
-                                continue
-                            # إذا تم التعرف على الفني، تُستخدم مدينته من قاعدة البيانات دائماً
-                            # (حتى لو كانت فارغة) وليس من ملف Excel
-                            if resolved_technician in technician_city_map:
-                                resolved_city = technician_city_map[resolved_technician]
-                            else:
-                                resolved_city = str(row.get("المدينة", "")).strip()
-                            # نوع/حالة المهمة: القيمة الفارغة أو غير المعروفة تُستبدل
-                            # تلقائياً بقيمة افتراضية ولا تُعتبر خطأ يوقف الاستيراد
-                            resolved_type = normalize_import_task_type(row.get("نوع المهمة", ""))
-                            resolved_status = normalize_import_task_status(row.get("حالة المهمة", ""))
-                            rows_to_insert.append((
-                                resolved_technician,
-                                number,
-                                str(row.get("رقم الاشتراك", "")).strip(),
-                                resolved_type,
-                                resolved_status,
-                                resolved_city,
-                                str(row.get("الملاحظات", "")).strip(),
-                                today,
-                            ))
-                            existing_numbers.add(number)
-                            added += 1
-                        # إدراج جماعي بدل استعلام لكل صف على حدة (أسرع بكثير للملفات الكبيرة)
-                        bulk_add_tasks(rows_to_insert)
-                        if added:
+                        # محرك الاستيراد الذكي: لا يتوقف عند وجود صف به خطأ — يتم
+                        # استيراد كل الصفوف الصحيحة مباشرة، وإرسال الصفوف التي بها
+                        # مشكلة (فني غير معروف، نوع/حالة مهمة غير معروفة) إلى جدول
+                        # مراجعة الاستيراد فقط، دون إيقاف بقية العملية.
+                        rows_to_insert, report = import_excel(
+                            incoming,
+                            known_technicians=technicians_only,
+                            existing_tasks=existing_tasks_list,
+                            execution_date=datetime.date.today(),
+                        )
+
+                        inserted_ids = bulk_add_tasks(rows_to_insert) if rows_to_insert else []
+                        review_created = 0
+                        for task_id, issues in zip(inserted_ids, report.row_review_issues):
+                            for issue in issues:
+                                create_import_review(
+                                    task_id,
+                                    issue["field"],
+                                    issue["raw_value"],
+                                    issue.get("suggested_value"),
+                                    issue.get("confidence"),
+                                    issue.get("reason") or "",
+                                )
+                                review_created += 1
+
+                        save_import_log(
+                            uploaded.name, st.session_state.fullname, report.total_read,
+                            report.imported, report.error_count, report.needs_review_count,
+                            report.elapsed_seconds,
+                            details=f"مطابقة فنيين: {report.match_success_rate * 100:.1f}%",
+                        )
+                        if report.imported:
                             log_action(
                                 st.session_state.fullname,
                                 "استيراد مهام",
-                                f"عدد: {added}, مكرر: {duplicated}, متجاوَز (اسم فني غامض): {skipped_ambiguous}",
+                                f"مستورد: {report.imported}, مكرر: {report.duplicated}, أخطاء: {report.error_count}, يحتاج مراجعة: {report.needs_review_count}",
                             )
-                    summary = f"✅ تمت إضافة {added} مهمة، وتجاهل {duplicated} مهمة مكررة."
-                    if skipped_ambiguous:
-                        summary += f" تم تجاوز {skipped_ambiguous} صف بسبب تعذر تحديد اسم الفني بدقة."
-                    st.success(summary)
-                    if import_warnings:
-                        with st.expander(f"⚠️ سجل تحذيرات الاستيراد ({len(import_warnings)})", expanded=True):
-                            for warning in import_warnings:
-                                st.warning(warning)
-                    st.session_state["last_import_warnings"] = import_warnings
-                    if not import_warnings:
+
+                    st.divider()
+                    st.subheader("📊 تقرير الاستيراد")
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("إجمالي الصفوف المقروءة", report.total_read)
+                    m2.metric("✅ مستورد بنجاح", report.imported)
+                    m3.metric("⚠️ مكرر (تجاهل)", report.duplicated)
+                    m4.metric("❌ أخطاء", report.error_count)
+                    m5, m6, m7, m8 = st.columns(4)
+                    m5.metric("فنيون معروفون", report.recognized_technician_count)
+                    m6.metric("فنيون غير معروفين", report.unknown_technician_count)
+                    m7.metric("نسبة نجاح المطابقة", f"{report.match_success_rate * 100:.1f}%")
+                    m8.metric("🔍 يحتاج مراجعة", review_created)
+
+                    if report.imported > 0:
+                        st.success(f"✅ تمت إضافة {report.imported} مهمة بنجاح، منها {review_created} تحتاج مراجعة (راجع تبويب 🔍 مراجعة الاستيراد).")
+                        notify_admins(
+                            "import_review" if review_created else "import_success",
+                            "استيراد Excel",
+                            f"تم استيراد {report.imported} مهمة من الملف \"{uploaded.name}\"" + (f"، منها {review_created} تحتاج مراجعة." if review_created else "."),
+                        )
+
+                    if report.errors:
+                        with st.expander(f"❌ صفوف تم تجاوزها كلياً ({report.error_count})", expanded=False):
+                            st.dataframe(
+                                pd.DataFrame([{"رقم الصف": e.row_index, "سبب الرفض": e.reason, "طريقة الإصلاح": e.suggestion} for e in report.errors]),
+                                hide_index=True, use_container_width=True,
+                            )
+
+                    st.session_state.pop("import_review_loaded", None)
+                    if report.imported > 0 and not report.errors:
                         st.rerun()
         with col2:
             st.subheader("📤 تصدير Excel")
@@ -977,6 +1055,9 @@ def admin_page():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                 )
+
+    with tab_review:
+        _import_review_tab(technicians_df)
 
     with tab_task_reports:
         technicians = (

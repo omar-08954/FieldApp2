@@ -303,11 +303,84 @@ def require_login(roles=None):
 
 
 def top_nav():
-    from database.notifications import get_badge_count, notifications_enabled, set_notifications_enabled
+    from database.notifications import (
+        get_badge_count,
+        list_notifications,
+        mark_all_read,
+        mark_read,
+        notifications_enabled,
+        remove_all_notifications,
+        remove_notification,
+        set_notifications_enabled,
+        show_toast,
+    )
+
+    # تحديث دوري خفيف لعدد الإشعارات غير المقروءة دون الحاجة لإعادة تحميل الصفحة
+    # يدوياً. الاعتماد على مكتبة streamlit-autorefresh اختياري تماماً: أي فشل في
+    # استيرادها أو تشغيلها لا يوقف التطبيق، فقط يعطّل التحديث التلقائي.
+    try:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=20000, key="notifications_autorefresh")
+    except Exception:
+        pass
+
+    badge = get_badge_count()
+    previous_badge = st.session_state.get("_last_seen_badge_count", badge)
+    is_new_arrival = badge > previous_badge
+    st.session_state["_last_seen_badge_count"] = badge
+    if is_new_arrival:
+        show_toast("🔔 وصل إشعار جديد.", "🔔")
+        st.session_state["_notif_pulse_until"] = time.time() + 2.5
+
+    pulse_active = time.time() < st.session_state.get("_notif_pulse_until", 0)
+
+    st.markdown(
+        f"""
+        <style>
+        .st-key-notif_bell_wrap button {{
+            position: relative;
+            border-radius: 10px !important;
+            transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+        }}
+        .st-key-notif_bell_wrap button:hover {{
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 10px 22px rgba(249, 2, 2, .3);
+        }}
+        {"" if not badge else f'''
+        .st-key-notif_bell_wrap button::after {{
+            content: "{badge if badge < 100 else '99+'}";
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 4px;
+            border-radius: 999px;
+            background: #F90202;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 800;
+            line-height: 18px;
+            text-align: center;
+            box-shadow: 0 0 0 2px #DADADA;
+        }}
+        '''}
+        {"" if not pulse_active else '''
+        @keyframes notifPulse {
+            0% { box-shadow: 0 0 0 0 rgba(249, 2, 2, .55); }
+            70% { box-shadow: 0 0 0 10px rgba(249, 2, 2, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(249, 2, 2, 0); }
+        }
+        .st-key-notif_bell_wrap button {
+            animation: notifPulse 1.1s ease-out 2;
+        }
+        '''}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown('<div class="top-nav">', unsafe_allow_html=True)
-    badge = get_badge_count()
-    bell_label = f"🔔 الإشعارات ({badge})" if badge else "🔔 الإشعارات"
     col1, col2, col3, col4 = st.columns([2, 1.2, 1, 1])
     with col1:
         st.markdown(
@@ -322,10 +395,10 @@ def top_nav():
             set_notifications_enabled(new_enabled)
             st.rerun()
     with col3:
-        if st.button(bell_label, use_container_width=True, key="open_notifications"):
-            st.session_state.current_page = "admin"
-            st.session_state["open_notifications_tab"] = True
-            st.rerun()
+        with st.container(key="notif_bell_wrap"):
+            bell_label = f"🔔 ({badge})" if badge else "🔔"
+            with st.popover(bell_label, use_container_width=True, help="الإشعارات"):
+                _render_notifications_popover(list_notifications, mark_read, mark_all_read, remove_notification, remove_all_notifications)
     with col4:
         c_home, c_logout = st.columns(2)
         with c_home:
@@ -336,6 +409,73 @@ def top_nav():
             if st.button("🚪", use_container_width=True, help="تسجيل الخروج"):
                 logout()
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_notifications_popover(list_notifications, mark_read, mark_all_read, remove_notification, remove_all_notifications):
+    """محتوى نافذة الإشعارات: تُفتح داخل نفس الصفحة (Popover) دون أي انتقال أو
+    تحميل صفحة جديدة. يحتوي على بحث فوري، فلترة حسب النوع وحالة القراءة،
+    ترتيب حسب الأحدث (افتراضي من قاعدة البيانات)، تحديد كمقروء/الكل، وحذف
+    واحد/الكل."""
+    from database.notifications import EVENT_LABELS
+
+    st.markdown("#### 🔔 مركز الإشعارات")
+    search_col, status_col, type_col = st.columns([2, 1, 1])
+    with search_col:
+        keyword = st.text_input("بحث داخل الإشعارات", key="notif_popover_search", label_visibility="collapsed", placeholder="🔎 بحث...")
+    with status_col:
+        status_filter = st.selectbox(
+            "حالة القراءة", ["الكل", "غير مقروءة", "مقروءة"],
+            key="notif_popover_status_filter", label_visibility="collapsed",
+        )
+    with type_col:
+        type_options = ["كل الأنواع"] + list(EVENT_LABELS.values())
+        type_filter = st.selectbox("نوع الإشعار", type_options, key="notif_popover_type_filter", label_visibility="collapsed")
+
+    items = list_notifications(keyword=keyword)
+    if status_filter == "غير مقروءة":
+        items = [n for n in items if not n.get("is_read")]
+    elif status_filter == "مقروءة":
+        items = [n for n in items if n.get("is_read")]
+    if type_filter != "كل الأنواع":
+        items = [n for n in items if EVENT_LABELS.get(n.get("event_type"), n.get("event_type")) == type_filter]
+
+    b1, b2 = st.columns(2)
+    with b1:
+        if st.button("✅ تحديد الكل كمقروء", use_container_width=True, key="notif_popover_mark_all"):
+            mark_all_read()
+            st.rerun()
+    with b2:
+        if st.button("🗑️ حذف الكل", use_container_width=True, key="notif_popover_delete_all"):
+            remove_all_notifications()
+            st.rerun()
+
+    if not items:
+        st.info("لا توجد إشعارات.")
+        return
+
+    for item in items[:50]:
+        unread = not item.get("is_read")
+        dot = "🟢" if unread else "⚪"
+        event_label = EVENT_LABELS.get(item.get("event_type"), item.get("event_type") or "")
+        with st.container(border=True):
+            top = st.columns([5, 1, 1])
+            with top[0]:
+                title = item.get("title", "")
+                st.markdown(f"**{dot} {title}**  \n<span class='muted'>🏷️ {event_label}</span>", unsafe_allow_html=True)
+                meta = str(item.get("created_at", ""))
+                actor = item.get("actor")
+                if actor:
+                    meta += f" · بواسطة {actor}"
+                st.caption(meta)
+                st.write(item.get("message", ""))
+            with top[1]:
+                if unread and st.button("✅", key=f"notif_popover_read_{item['id']}", help="تحديد كمقروء"):
+                    mark_read(item["id"])
+                    st.rerun()
+            with top[2]:
+                if st.button("🗑️", key=f"notif_popover_del_{item['id']}", help="حذف"):
+                    remove_notification(item["id"])
+                    st.rerun()
 
 
 def page_header(title, caption=""):
