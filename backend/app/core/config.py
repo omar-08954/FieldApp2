@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     ai_api_key: str = ""
     ai_model: str = "gpt-4.1-mini"
     uploads_dir: str = "uploads"
+    logs_dir: str = "logs"
+    log_max_bytes: int = 10 * 1024 * 1024
+    log_backup_count: int = 10
     max_upload_bytes: int = 5 * 1024 * 1024
 
     @property

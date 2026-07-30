@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.core.security import create_token, decode_token, verify_password
 from app.models import AssignedTask, DailyReport, ImportReview, Material, Notification, Role, Task, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, Page, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import report_path, save_report_image
@@ -171,9 +171,27 @@ def ignore_import_review(review_id: int, db: Db, _: User = Depends(require_roles
 def summary(db: Db, _: CurrentUser):
     total = db.scalar(select(func.count()).select_from(Task)) or 0
     completed = db.scalar(select(func.count()).select_from(Task).where(Task.task_status == "مزال")) or 0
-    review = db.scalar(select(func.count()).select_from(Task).where(Task.needs_review.is_(True))) or 0
+    delayed = db.scalar(select(func.count()).select_from(Task).where(Task.task_status == "عائق")) or 0
+    review = db.scalar(
+        select(func.count()).select_from(ImportReview).where(ImportReview.status == "pending")
+    ) or 0
     status_rows = db.execute(select(Task.task_status.label("label"), func.count().label("value")).group_by(Task.task_status)).mappings().all()
-    return DashboardSummary(total_tasks=total, completion_rate=round(completed / total * 100, 1) if total else 0, delayed_tasks=0, needs_review=review, by_status=[dict(x) for x in status_rows], daily_trend=[])
+    daily_rows = db.execute(
+        select(Task.execution_date.label("label"), func.count().label("value"))
+        .group_by(Task.execution_date).order_by(Task.execution_date.desc()).limit(14)
+    ).mappings().all()
+    technician_rows = db.execute(
+        select(Task.technician_name.label("label"), func.count().label("value"))
+        .where(Task.technician_name != "غير مسجل").group_by(Task.technician_name)
+        .order_by(func.count().desc()).limit(5)
+    ).mappings().all()
+    latest = db.scalars(select(Task).order_by(Task.created_at.desc(), Task.id.desc()).limit(8)).all()
+    return DashboardSummary(
+        total_tasks=total, completion_rate=round(completed / total * 100, 1) if total else 0,
+        delayed_tasks=delayed, needs_review=review, by_status=[dict(x) for x in status_rows],
+        daily_trend=[{"label": row["label"].isoformat(), "value": row["value"]} for row in reversed(daily_rows)],
+        latest_tasks=latest, top_technicians=[dict(row) for row in technician_rows],
+    )
 
 
 @router.get("/reports/tasks", response_model=TaskReportSummary)
@@ -301,7 +319,7 @@ async def complete_assignment(assignment_id: int, db: Db, user: CurrentUser):
     return assignment
 
 
-@router.get("/notifications")
+@router.get("/notifications", response_model=list[NotificationPublic])
 def notifications(db: Db, user: CurrentUser):
     return db.scalars(select(Notification).where(Notification.user_id == user.id).order_by(Notification.created_at.desc()).limit(100)).all()
 
@@ -345,7 +363,17 @@ def report_image(report_id: int, db: Db, user: CurrentUser):
 
 @router.websocket("/ws/events")
 async def events(socket: WebSocket):
-    await broker.connect(socket)
+    """Authenticated event stream; unauthenticated sockets are never accepted."""
+    token = socket.headers.get("sec-websocket-protocol")
+    if not token:
+        await socket.close(code=1008, reason="Authentication required")
+        return
+    try:
+        decode_token(token, "access")
+    except Exception:
+        await socket.close(code=1008, reason="Invalid session")
+        return
+    await broker.connect(socket, subprotocol=token)
     try:
         while True: await socket.receive_text()
     except Exception: broker.disconnect(socket)

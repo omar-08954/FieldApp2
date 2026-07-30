@@ -1,5 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +10,10 @@ from app.api.routes import router
 from app.core.config import get_settings
 from app.core.database import Base, engine
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s", handlers=[logging.StreamHandler(), logging.FileHandler("fieldapp-api.log", encoding="utf-8")])
 settings = get_settings()
+log_directory = Path(settings.logs_dir)
+log_directory.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s", handlers=[logging.StreamHandler(), RotatingFileHandler(log_directory / "fieldapp-api.log", maxBytes=settings.log_max_bytes, backupCount=settings.log_backup_count, encoding="utf-8")])
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):

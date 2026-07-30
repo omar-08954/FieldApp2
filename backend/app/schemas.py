@@ -131,6 +131,8 @@ class DashboardSummary(BaseModel):
     needs_review: int
     by_status: list[dict]
     daily_trend: list[dict]
+    latest_tasks: list[TaskPublic]
+    top_technicians: list[dict]
 
 
 class TaskReportSummary(BaseModel):
@@ -189,6 +191,16 @@ class ImportReviewRepair(BaseModel):
     city: str | None = Field(default=None, max_length=120)
     notes: str | None = None
     execution_date: date | None = None
+
+
+class NotificationPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    event_type: str
+    title: str
+    message: str
+    is_read: bool
+    created_at: datetime
 
 
 class AssistantMessage(BaseModel):

@@ -12,8 +12,9 @@ Next.js 15 / React 19  →  FastAPI REST + WebSocket  →  PostgreSQL
 ```
 
 - Backend: طبقات `api → services → repositories → models`، جلسات SQLAlchemy 2، connection pool، OpenAPI تلقائي في `/docs`.
-- Frontend: Next.js App Router، TypeScript strict، Tailwind، React Query، TanStack Table، Framer Motion، Recharts، وIBM Plex Sans Arabic. التنقل العلوي والتبويبات الداخلية يحاكيان تنظيم صفحات Streamlit القديمة؛ لا يوجد Sidebar.
+- Frontend: Next.js App Router، TypeScript strict، Tailwind، React Query، TanStack Table، Framer Motion، Recharts، وIBM Plex Sans Arabic. يتضمن Sidebar متجاوباً قابلًا للطي، وضعاً داكناً، وصفحات الإشعارات والإعدادات، مع الحفاظ على التبويبات الداخلية اللازمة لتدفقات التطبيق السابق.
 - الأمان: Access/Refresh JWT قصيرا العمر، أدوار `admin / manager / technician`، CORS قابل للضبط. يجب نقل refresh token إلى Cookie `HttpOnly` عند إتمام طبقة BFF قبل النشر العام.
+- الاتصال الحي: واجهة الويب تتصل بـ WebSocket موثّق بـ Access JWT عبر `Sec-WebSocket-Protocol` وتحدّث بيانات React Query بعد كل حدث. استخدم WSS خلف Nginx، وانقل المصادقة إلى Cookie/BFF عند تعريض الخدمة للإنترنت.
 - الاستيراد: كل صف يعمل داخل savepoint؛ الأعمدة غير الضرورية وخصوصاً ID تتجاهل، والقيم الافتراضية هي `غير مسجل` للاشتراك و`تم الفحص` للحالة. أي استثناء يُسجل في ملف API وينشئ `ImportReview` بدل تعطيل الدفعة.
 - المساعد الذكي: نافذة محادثة مشتركة في الشريط العلوي، تمرّر الطلب إلى API فقط. فعّل `AI_ENABLED=true` وأدخل `AI_API_KEY` و`AI_MODEL` في ملف البيئة؛ لا تضع المفتاح في `NEXT_PUBLIC_*` أبداً.
 
@@ -24,7 +25,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-ثم افتح `http://localhost:3000`، وواجهة Swagger على `http://localhost:8000/docs`.
+في تشغيل Docker الحالي، تدخل المنصة عبر `http://localhost`، وتتوفر Swagger على `http://localhost/docs` عبر Nginx. لا تُنشر منافذ API أو Next.js مباشرةً.
 
 للتشغيل بدون Docker:
 
