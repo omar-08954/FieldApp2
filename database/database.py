@@ -952,7 +952,7 @@ def add_task(technician, task_number, subscription_number, task_type, task_statu
     _invalidate_cache()
 
 
-def bulk_add_tasks(rows):
+def bulk_add_tasks(rows, return_errors=False):
     """إدراج جماعي دفعة واحدة. كل صف tuple:
     (technician, task_number, subscription_number, task_type, task_status, city,
     notes, execution_date [, needs_review, excel_technician_name, match_confidence,
@@ -964,23 +964,35 @@ def bulk_add_tasks(rows):
     مَعزول داخل SAVEPOINT خاص به فيُسجَّل خطؤه ويُستكمل الباقي بدل إسقاط الدفعة
     كاملة."""
     if not rows:
-        return []
+        return ([], []) if return_errors else []
 
-    normalized = []
-    for row in rows:
-        base = tuple(row[:8])
-        extras = row[8:] if len(row) > 8 else ()
-        needs_review = extras[0] if len(extras) > 0 else False
-        excel_name = extras[1] if len(extras) > 1 else None
-        confidence = extras[2] if len(extras) > 2 else None
-        suggested = extras[3] if len(extras) > 3 else None
-        normalized.append(base + (needs_review, excel_name, confidence, suggested))
+    normalized: list[tuple | None] = [None] * len(rows)
+    insert_errors: list[dict | None] = [None] * len(rows)
+    for i, row in enumerate(rows):
+        try:
+            base = tuple(row[:8])
+            if len(base) != 8:
+                raise ValueError("بيانات صف الاستيراد لا تحتوي على الحقول الثمانية المطلوبة.")
+            extras = row[8:] if len(row) > 8 else ()
+            normalized[i] = base + (
+                extras[0] if len(extras) > 0 else False,
+                extras[1] if len(extras) > 1 else None,
+                extras[2] if len(extras) > 2 else None,
+                extras[3] if len(extras) > 3 else None,
+            )
+        except Exception as exc:
+            insert_errors[i] = {
+                "error_type": type(exc).__name__, "message": str(exc),
+                "task_number": "", "column": "",
+            }
 
-    inserted_ids: list = [None] * len(normalized)
+    inserted_ids: list = [None] * len(rows)
 
     def _action(conn):
         cur = conn.cursor()
         for i, row in enumerate(normalized):
+            if row is None:
+                continue
             try:
                 cur.execute("SAVEPOINT bulk_task_row")
                 cur.execute(
@@ -1006,12 +1018,27 @@ def bulk_add_tasks(rows):
                     "bulk_add_tasks: فشل إدراج صف (رقم المهمة=%s): %s",
                     row[1] if len(row) > 1 else "?", exc,
                 )
+                insert_errors[i] = {
+                    "error_type": type(exc).__name__, "message": str(exc),
+                    "task_number": row[1] if len(row) > 1 else "", "column": "database",
+                }
         conn.commit()
         cur.close()
 
-    _with_connection(_action)
+    try:
+        _with_connection(_action)
+    except Exception as exc:
+        # انقطاع الاتصال لا يجوز أن يعيد استثناءً للواجهة؛ تعامل كل الصفوف كصفوف
+        # فشل إدراجها حتى تُعرض وتُحفظ للمراجعة بدلاً من ضياع الدفعة كلها.
+        logging.getLogger(__name__).exception("bulk_add_tasks: تعذر تنفيذ دفعة الاستيراد")
+        for i, row in enumerate(normalized):
+            if row is not None and insert_errors[i] is None:
+                insert_errors[i] = {
+                    "error_type": type(exc).__name__, "message": str(exc),
+                    "task_number": row[1] if len(row) > 1 else "", "column": "database",
+                }
     _invalidate_cache()
-    return inserted_ids
+    return (inserted_ids, insert_errors) if return_errors else inserted_ids
 
 
 def update_task(task_id, task_number, subscription_number, task_type, task_status, city=None, notes=None):
@@ -1683,15 +1710,22 @@ def create_import_review(task_id, issue_field, raw_value, suggested_value=None, 
     """إنشاء سجل مراجعة عام لأي حقل متكرر (وليس الفني فقط). excel_technician_name
     و suggested_technician يُعاد استخدامهما هنا بمعنى (القيمة الخام / القيمة
     المقترحة) الخاصين بـ issue_field تحديداً."""
+    # task_id اختياري عمداً: أخطاء القراءة أو فشل INSERT لا تملك مهمةً محفوظة،
+    # لكنها تبقى سجلات مراجعة صالحة بدلاً من فقدانها أو إيقاف بقية الاستيراد.
     field = issue_field if issue_field in REVIEW_FIELD_COLUMNS else "technician"
-    execute(
-        """
-        INSERT INTO import_reviews
-            (task_id, issue_field, excel_technician_name, suggested_technician, match_confidence, issue_reason, status)
-        VALUES (%s, %s, %s, %s, %s, %s, 'pending')
-        """,
-        (int(task_id), field, raw_value, suggested_value, match_confidence, issue_reason),
-    )
+    try:
+        execute(
+            """
+            INSERT INTO import_reviews
+                (task_id, issue_field, excel_technician_name, suggested_technician, match_confidence, issue_reason, status)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+            """,
+            (int(task_id) if task_id is not None else None, field, str(raw_value or ""), suggested_value, match_confidence, issue_reason),
+        )
+        return True
+    except Exception:
+        logging.getLogger(__name__).exception("تعذر حفظ سجل مراجعة الاستيراد")
+        return False
 
 
 def get_pending_import_reviews(keyword=""):

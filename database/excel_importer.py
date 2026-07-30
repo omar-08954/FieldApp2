@@ -129,6 +129,9 @@ class ImportReport:
     # أحداث الإصلاح التلقائي: كل مرة يُصادَف فيها استثناء أو نقص بيانات أثناء
     # معالجة صف ويُنجح النظام في ترقيعه بقيمة افتراضية بدل إسقاط الصف بالكامل.
     auto_fixed: list[dict] = field(default_factory=list)
+    # رقم صف الملف الموافق لكل عنصر في rows_to_insert / row_review_issues.
+    # يُستخدم عند فشل PostgreSQL لاحقاً كي يبقى سجل المراجعة قابلاً للتتبع.
+    row_numbers: list[int] = field(default_factory=list)
 
     @property
     def auto_fixed_count(self) -> int:
@@ -365,7 +368,9 @@ def _make_duplicate_key(
 def build_existing_keys(existing_tasks: list[dict]) -> set[tuple]:
     """بناء مجموعة مفاتيح التكرار من المهام الموجودة في قاعدة البيانات."""
     keys: set[tuple] = set()
-    for task in existing_tasks:
+    for task in (existing_tasks or []):
+        if not isinstance(task, dict):
+            continue
         key = _make_duplicate_key(
             task.get("technician", ""),
             task.get("task_number", ""),
@@ -396,6 +401,9 @@ def import_excel(
     today = execution_date or datetime.date.today()
 
     dataframe = clean_dataframe(dataframe)
+    if dataframe is None:
+        report.elapsed_seconds = time.perf_counter() - started
+        return [], report
     column_map = resolve_column_mapping(dataframe.columns.tolist(), dataframe)
     if column_map:
         dataframe = dataframe.rename(columns=column_map)
@@ -405,7 +413,8 @@ def import_excel(
     session_keys: set[tuple] = set()
     tech_city_map: dict[str, str] = {
         str(t.get("fullname") or "").strip(): str(t.get("city") or "").strip()
-        for t in known_technicians if t.get("fullname")
+        for t in (known_technicians or [])
+        if isinstance(t, dict) and t.get("fullname")
     }
 
     rows_to_insert: list[tuple] = []
@@ -415,7 +424,17 @@ def import_excel(
     for position, (idx, row) in enumerate(dataframe.iterrows()):
         file_row = int(idx) + 2
         if progress_callback:
-            progress_callback(position + 1, total_rows)
+            try:
+                progress_callback(position + 1, total_rows)
+            except Exception as exc:
+                # لا يجب أن يوقف عارض التقدم عملية الاستيراد.
+                report.auto_fixed.append({
+                    "row": int(idx) + 2,
+                    "field": "progress_callback",
+                    "raw_value": "",
+                    "reason": str(exc),
+                    "action_taken": "تم تجاهل خطأ تحديث التقدم واستمر الاستيراد.",
+                })
 
         # كل شيء داخل هذا try الخاص بالصف الواحد فقط: أي استثناء (KeyError أو
         # غيره) يُلتقط هنا، يُسجَّل بتفصيل كامل، ولا يوقف استيراد بقية الصفوف
@@ -439,7 +458,17 @@ def import_excel(
             # رقم الاشتراك: إذا كان العمود غير موجود أصلاً في الملف، أو موجوداً
             # لكن قيمته فارغة/None/NaN/مسافات فقط، تتحول تلقائياً إلى "غير مسجل"
             # بدل رفع أي خطأ أو ترك الحقل فارغاً.
-            subscription_number = clean_numeric_text(row.get("رقم الاشتراك", "")) or "غير مسجل"
+            raw_subscription = row.get("رقم الاشتراك", "")
+            subscription_number = clean_numeric_text(raw_subscription) or "غير مسجل"
+            if subscription_number == "غير مسجل":
+                report.auto_fixed.append({
+                    "row": file_row,
+                    "task_number": task_number,
+                    "field": "رقم الاشتراك",
+                    "raw_value": raw_subscription,
+                    "reason": "عمود رقم الاشتراك مفقود أو قيمته فارغة.",
+                    "action_taken": "تم تعيين القيمة الافتراضية: غير مسجل، واستمر إدراج الصف.",
+                })
             raw_task_type = clean_text(row.get("نوع المهمة", ""))
             raw_task_status = clean_text(row.get("حالة المهمة", ""))
             task_type = normalize_task_type(raw_task_type)
@@ -538,6 +567,7 @@ def import_excel(
                 suggested,
             ))
             report.row_review_issues.append(row_issues)
+            report.row_numbers.append(file_row)
             report.imported += 1
             if needs_review:
                 report.needs_review_count += 1

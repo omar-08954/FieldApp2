@@ -1,0 +1,2 @@
+import { Shell } from "@/components/shell"; import { LegacyTabs } from "@/components/legacy-tabs"; import { MaterialsPanel } from "@/components/operations-panels";
+export default function InventoryPage() { return <Shell><h1 className="mb-6 text-2xl font-bold">المستودع</h1><LegacyTabs tabs={[{label:"➕ إضافة مادة",content:<MaterialsPanel/>},{label:"📋 المواد",content:<MaterialsPanel/>},{label:"⚙️ إدارة مادة",content:<MaterialsPanel/>}]}/></Shell>; }

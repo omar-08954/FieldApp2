@@ -1,0 +1,5 @@
+"use client";
+import { useState } from "react";
+export type LegacyTab = { label: string; content: React.ReactNode };
+export function LegacyTabs({ tabs }: { tabs: LegacyTab[] }) { const [selected, setSelected] = useState(0); return <><div className="mb-5 flex gap-2 overflow-x-auto border-b pb-3">{tabs.map((tab, index) => <button key={tab.label} onClick={() => setSelected(index)} className={`shrink-0 rounded-xl px-3 py-2 text-sm transition ${selected === index ? "bg-brand font-semibold text-white" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`}>{tab.label}</button>)}</div><div>{tabs[selected]?.content}</div></>; }
+export function TabPlaceholder({ title, description }: { title: string; description: string }) { return <section className="panel"><h2 className="text-lg font-bold">{title}</h2><p className="mt-2 text-sm text-slate-500">{description}</p><div className="mt-5 rounded-xl border border-dashed p-8 text-center text-sm text-slate-400">سيُعرض محتوى هذا التبويب هنا مع واجهات API المرتبطة به.</div></section>; }
