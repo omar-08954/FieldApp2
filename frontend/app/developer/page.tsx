@@ -1,3 +1,2 @@
-import { Shell } from "@/components/shell"; import { LegacyTabs, TabPlaceholder } from "@/components/legacy-tabs";
-const tabs=["📊 لوحة الحالة","👥 المستخدمون","📋 المهام","📦 المستودع","📜 سجل العمليات","⚠️ سجل الأخطاء","🧹 الصيانة","📈 الأداء","⚙️ إعدادات المطور","🤖 مساعد المطور"];
-export default function DeveloperPage() { return <Shell><h1 className="mb-6 text-2xl font-bold">مركز المطور</h1><LegacyTabs tabs={tabs.map(label=>({label,content:<TabPlaceholder title={label} description="أدوات وتشخيصات النظام للمدير فقط."/>}))}/></Shell>; }
+import { Shell } from "@/components/shell"; import { DeveloperStatusPanel } from "@/components/developer-status";
+export default function DeveloperPage() { return <Shell><div className="mb-6"><p className="text-sm font-medium text-brand">Developer Center</p><h1 className="mt-2 text-2xl font-bold">مركز المطور</h1><p className="mt-1 text-slate-500">مؤشرات تشغيلية آمنة للمسؤولين، دون كشف أسرار أو بيانات حساسة.</p></div><DeveloperStatusPanel/></Shell>; }

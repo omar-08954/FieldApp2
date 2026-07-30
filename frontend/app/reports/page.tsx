@@ -1,2 +1,2 @@
-import { Shell } from "@/components/shell"; import { LegacyTabs, TabPlaceholder } from "@/components/legacy-tabs";
-export default function ReportsPage() { return <Shell><h1 className="mb-6 text-2xl font-bold">التقارير</h1><LegacyTabs tabs={[{label:"📍 تقارير جدة",content:<TabPlaceholder title="تقارير جدة" description="تحليل وتصدير مهام مدينة جدة."/>},{label:"📍 تقارير مكة",content:<TabPlaceholder title="تقارير مكة" description="تحليل وتصدير مهام مدينة مكة."/>}]}/></Shell>; }
+import { Shell } from "@/components/shell"; import { LegacyTabs } from "@/components/legacy-tabs"; import { TaskReport } from "@/components/task-report";
+export default function ReportsPage() { return <Shell><h1 className="mb-6 text-2xl font-bold">التقارير</h1><LegacyTabs tabs={[{label:"📍 تقارير جدة",content:<TaskReport city="جدة"/>},{label:"📍 تقارير مكة",content:<TaskReport city="مكة"/>}]}/></Shell>; }

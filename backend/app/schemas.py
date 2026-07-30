@@ -1,5 +1,8 @@
 from datetime import date, datetime
+from typing import Generic, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
+
+T = TypeVar("T")
 
 
 class UserPublic(BaseModel):
@@ -47,12 +50,30 @@ class TaskPublic(TaskCreate):
     updated_at: datetime | None
 
 
+class TaskUpdate(BaseModel):
+    technician_id: int | None = None
+    technician_name: str | None = Field(default=None, max_length=200)
+    subscription_number: str | None = Field(default=None, max_length=120)
+    task_type: str | None = Field(default=None, max_length=80)
+    task_status: str | None = Field(default=None, max_length=80)
+    city: str | None = Field(default=None, max_length=120)
+    notes: str | None = None
+    execution_date: date | None = None
+
+
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=80)
     password: str = Field(min_length=10, max_length=256)
     full_name: str = Field(min_length=2, max_length=200)
     role: str = "technician"
     city: str | None = None
+
+
+class UserUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=2, max_length=200)
+    role: str | None = None
+    city: str | None = Field(default=None, max_length=120)
+    is_active: bool | None = None
 
 
 class MaterialCreate(BaseModel):
@@ -87,8 +108,17 @@ class AssignmentPublic(AssignmentCreate):
     created_at: datetime
 
 
-class Page(BaseModel):
-    items: list[TaskPublic]
+class DailyReportPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    technician_id: int
+    report_date: date
+    image_mime: str
+    created_at: datetime
+
+
+class Page(BaseModel, Generic[T]):
+    items: list[T]
     total: int
     page: int
     page_size: int
@@ -103,11 +133,62 @@ class DashboardSummary(BaseModel):
     daily_trend: list[dict]
 
 
+class TaskReportSummary(BaseModel):
+    city: str
+    total_tasks: int
+    completed_tasks: int
+    blocked_tasks: int
+    completion_rate: float
+    by_status: list[dict]
+    latest_tasks: list[TaskPublic]
+
+
+class DeveloperStatus(BaseModel):
+    environment: str
+    total_users: int
+    total_tasks: int
+    pending_import_reviews: int
+    unread_notifications: int
+    ai_enabled: bool
+
+
 class ImportResult(BaseModel):
     batch_id: int
     total_rows: int
     imported_rows: int
     review_rows: int
+
+
+class ImportReviewPublic(BaseModel):
+    """Safe, operator-facing representation of a quarantined import row."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    batch_id: int | None
+    source_row: int
+    task_number: str | None
+    technician_name: str | None
+    subscription_number: str | None
+    task_type: str | None
+    exception_type: str
+    error_message: str
+    postgres_message: str | None
+    action_taken: str
+    status: str
+    created_at: datetime
+
+
+class ImportReviewRepair(BaseModel):
+    """The normalized fields an operator may correct before retrying a row."""
+
+    technician_name: str | None = Field(default=None, max_length=200)
+    task_number: str | None = Field(default=None, max_length=120)
+    subscription_number: str | None = Field(default=None, max_length=120)
+    task_type: str | None = Field(default=None, max_length=80)
+    task_status: str | None = Field(default=None, max_length=80)
+    city: str | None = Field(default=None, max_length=120)
+    notes: str | None = None
+    execution_date: date | None = None
 
 
 class AssistantMessage(BaseModel):

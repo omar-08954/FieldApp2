@@ -43,6 +43,20 @@ def _review(db: Session, batch: ImportBatch, row_number: int, raw: list[Any], ex
     db.add(ImportReview(batch_id=batch.id, source_row=row_number, task_number=values.get("task_number"), technician_name=values.get("technician_name"), subscription_number=values.get("subscription_number"), task_type=values.get("task_type"), exception_type=type(exc).__name__, error_message=str(exc)[:4000], postgres_message=str(exc)[:4000] if isinstance(exc, SQLAlchemyError) else None, action_taken=action, raw_payload=json.dumps(raw, ensure_ascii=False, default=str)))
 
 
+def task_values(values: dict[str, str]) -> dict[str, Any]:
+    """Build a Task payload without ever accepting a spreadsheet primary key."""
+    return {
+        "technician_name": values.get("technician_name") or "غير مسجل",
+        "task_number": values.get("task_number", ""),
+        "subscription_number": values.get("subscription_number") or DEFAULT_SUBSCRIPTION,
+        "task_type": values.get("task_type") or "تقني",
+        "task_status": values.get("task_status") or DEFAULT_STATUS,
+        "city": values.get("city") or None,
+        "notes": values.get("notes") or None,
+        "execution_date": date.today(),
+    }
+
+
 def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id: int | None) -> ImportBatch:
     """Process rows under savepoints; corrupt files become a review record, never a 500."""
     batch = ImportBatch(filename=filename[:255], imported_by_id=imported_by_id)
@@ -64,17 +78,17 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
                 if not task_number:
                     raise ValueError("رقم المهمة مطلوب")
                 # Excel IDs are deliberately ignored. PostgreSQL owns all primary keys.
-                task = Task(technician_name=values.get("technician_name") or "غير مسجل", task_number=task_number, subscription_number=values.get("subscription_number") or DEFAULT_SUBSCRIPTION, task_type=values.get("task_type") or "تقني", task_status=values.get("task_status") or DEFAULT_STATUS, city=values.get("city") or None, notes=values.get("notes") or None, execution_date=date.today())
+                task = Task(**task_values(values))
                 with db.begin_nested():
                     db.add(task); db.flush()
                 batch.imported_rows += 1
             except Exception as exc:
-                logger.exception("Excel row failed safely", extra={"row_number": row_number, "filename": filename})
+                logger.exception("Excel row failed safely", extra={"row_number": row_number, "import_filename": filename})
                 _review(db, batch, row_number, raw, exc, "moved_to_import_review", values)
                 batch.review_rows += 1
         db.commit()
     except Exception as exc:
-        logger.exception("Excel file processing failed safely", extra={"filename": filename})
+        logger.exception("Excel file processing failed safely", extra={"import_filename": filename})
         _review(db, batch, 1, [], exc, "file_moved_to_import_review")
         batch.review_rows += 1
         db.commit()
