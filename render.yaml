@@ -1,0 +1,66 @@
+services:
+  - type: web
+    runtime: python
+    name: fieldapp-api
+    region: frankfurt
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fieldapp-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: fieldapp-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_ORIGINS
+        fromService:
+          type: web
+          name: fieldapp-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: AI_ENABLED
+        value: "false"
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: gpt-4.1-mini
+
+  - type: web
+    runtime: node
+    name: fieldapp-web
+    region: frankfurt
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start -- -p $PORT
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: fieldapp-api
+          envVarKey: RENDER_EXTERNAL_URL
+
+  - type: keyvalue
+    name: fieldapp-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+databases:
+  - name: fieldapp-db
+    region: frankfurt
+    plan: free
+    databaseName: fieldapp
+    user: fieldapp
+    postgresMajorVersion: "16"

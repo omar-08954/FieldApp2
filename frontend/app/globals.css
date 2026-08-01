@@ -1,5 +1,5 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@layer base { * { @apply border-slate-200; } body { @apply bg-canvas text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100; } }
+@layer base { * { @apply border-slate-200; } body { @apply bg-canvas text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100; background-image: radial-gradient(circle at 90% 0%, rgb(99 102 241 / .10), transparent 26rem), radial-gradient(circle at 0% 40%, rgb(14 165 233 / .07), transparent 30rem); } }
 @layer components { .panel { @apply rounded-2xl border bg-white/80 p-5 shadow-soft backdrop-blur dark:border-slate-800 dark:bg-slate-900/80; } .metric { @apply panel relative overflow-hidden; } }

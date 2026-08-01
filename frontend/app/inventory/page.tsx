@@ -1,2 +1,2 @@
-import { Shell } from "@/components/shell"; import { MaterialsPanel } from "@/components/operations-panels";
-export default function InventoryPage() { return <Shell><div className="mb-6"><h1 className="text-2xl font-bold">المستودع</h1><p className="mt-1 text-slate-500">سجل موحد للمخزون مع تعديل الكميات مباشرة.</p></div><MaterialsPanel/></Shell>; }
+import { Shell } from "@/components/shell"; import { LegacyTabs } from "@/components/legacy-tabs"; import { MaterialsPanel } from "@/components/operations-panels";
+export default function InventoryPage() { return <Shell><div className="mb-6"><h1 className="text-2xl font-bold">المستودع</h1><p className="mt-1 text-slate-500">سجل موحد للمخزون مع تعديل الكميات مباشرة.</p></div><LegacyTabs tabs={[{label:"➕ إضافة مادة",content:<MaterialsPanel/>},{label:"📋 المواد",content:<MaterialsPanel/>},{label:"⚙️ إدارة مادة",content:<MaterialsPanel/>}]}/></Shell>; }

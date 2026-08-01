@@ -6,10 +6,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
-from app.core.security import create_token, decode_token, verify_password
+from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.models import AssignedTask, DailyReport, ImportReview, Material, Notification, Role, Task, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import report_path, save_report_image
@@ -42,6 +42,16 @@ def refresh(data: RefreshRequest, db: Db):
 
 @router.get("/auth/me", response_model=UserPublic)
 def me(user: CurrentUser): return user
+
+
+@router.post("/auth/change-password", status_code=204)
+def change_password(payload: PasswordChange, user: CurrentUser, db: Db):
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(422, "كلمة المرور الحالية غير صحيحة")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(422, "اختر كلمة مرور جديدة مختلفة عن الحالية")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
 
 
 @router.get("/tasks", response_model=Page[TaskPublic])

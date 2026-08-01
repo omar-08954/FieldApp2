@@ -1,22 +1,13 @@
 # FieldApp Enterprise
 
-منصة إدارة عمليات ميدانية عربية، مبنية كـ API وواجهة ويب منفصلتين وقابلتين للنشر. النسخة القديمة من Streamlit بقيت في جذر المشروع كمرجع وظيفي أثناء الترحيل؛ النظام الجديد موجود في `backend/` و`frontend/`.
+منصة لإدارة العمليات الميدانية باللغة العربية. هذه النسخة تعمل فقط بـ **Next.js + FastAPI + PostgreSQL**؛ تمت إزالة تطبيق Streamlit القديم وملفاته المرجعية.
 
-## المعمارية
+## الصفحات والوظائف
 
-```text
-Next.js 15 / React 19  →  FastAPI REST + WebSocket  →  PostgreSQL
-        React Query          Service / Repository         Alembic
-                                  ↓
-                                Redis (events/cache)
-```
-
-- Backend: طبقات `api → services → repositories → models`، جلسات SQLAlchemy 2، connection pool، OpenAPI تلقائي في `/docs`.
-- Frontend: Next.js App Router، TypeScript strict، Tailwind، React Query، TanStack Table، Framer Motion، Recharts، وIBM Plex Sans Arabic. يتضمن Sidebar متجاوباً قابلًا للطي، وضعاً داكناً، وصفحات الإشعارات والإعدادات، مع الحفاظ على التبويبات الداخلية اللازمة لتدفقات التطبيق السابق.
-- الأمان: Access/Refresh JWT قصيرا العمر، أدوار `admin / manager / technician`، CORS قابل للضبط. يجب نقل refresh token إلى Cookie `HttpOnly` عند إتمام طبقة BFF قبل النشر العام.
-- الاتصال الحي: واجهة الويب تتصل بـ WebSocket موثّق بـ Access JWT عبر `Sec-WebSocket-Protocol` وتحدّث بيانات React Query بعد كل حدث. استخدم WSS خلف Nginx، وانقل المصادقة إلى Cookie/BFF عند تعريض الخدمة للإنترنت.
-- الاستيراد: كل صف يعمل داخل savepoint؛ الأعمدة غير الضرورية وخصوصاً ID تتجاهل، والقيم الافتراضية هي `غير مسجل` للاشتراك و`تم الفحص` للحالة. أي استثناء يُسجل في ملف API وينشئ `ImportReview` بدل تعطيل الدفعة.
-- المساعد الذكي: نافذة محادثة مشتركة في الشريط العلوي، تمرّر الطلب إلى API فقط. فعّل `AI_ENABLED=true` وأدخل `AI_API_KEY` و`AI_MODEL` في ملف البيئة؛ لا تضع المفتاح في `NEXT_PUBLIC_*` أبداً.
+- شريط جانبي متجاوب: لوحة التحكم، لوحة المدير، المهام، الفنيون، التقارير، المستودع، المستخدمون، الاستيراد، الإعدادات، ومركز المطور.
+- تبويبات التطبيق القديم محفوظة في صفحات المدير، الفني، التقارير، المستخدمين، والمستودع.
+- الإشعارات والمساعد الذكي متاحان دائماً؛ وتوجد أزرارهما، مع تسجيل الخروج، في أسفل الشريط الجانبي.
+- الإعدادات تتضمن تبديل المظهر وتغيير كلمة المرور الفعلي.
 
 ## التشغيل المحلي
 
@@ -25,36 +16,25 @@ cp .env.example .env
 docker compose up --build
 ```
 
-في تشغيل Docker الحالي، تدخل المنصة عبر `http://localhost`، وتتوفر Swagger على `http://localhost/docs` عبر Nginx. لا تُنشر منافذ API أو Next.js مباشرةً.
+بعد الإقلاع افتح `http://localhost`. لا تُعرّض منافذ قاعدة البيانات أو API مباشرة للإنترنت.
 
-للتشغيل بدون Docker:
+## النشر الفعلي مع HTTPS
 
-```bash
-cd backend && python -m venv .venv && .venv/bin/pip install -r requirements.txt
-cd backend && alembic upgrade head && uvicorn app.main:app --reload
-cd frontend && npm install && npm run dev
-```
-
-## قاعدة البيانات والترحيل
-
-لا تستخدم `Base.metadata.create_all()` في بيئة الإنتاج. نفّذ فقط:
+1. أنشئ خادماً Linux، وافتح المنافذ `80` و`443` فقط، ثم وجّه سجلّي DNS من نوع A/AAAA للدومين إلى عنوانه.
+2. انسخ [.env.production.example](.env.production.example) إلى `.env.production`، واملأ الدومين وكلمات المرور و`JWT_SECRET` و`FRONTEND_ORIGINS` بعنوان HTTPS الفعلي.
+3. شغّل:
 
 ```bash
-cd backend && alembic upgrade head
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
 ```
 
-قبل نقل بيانات Streamlit، خذ نسخة احتياطية ثم أنشئ migration مخصصة تقوم بقراءة الجداول القديمة (`users`, `tasks`, `assigned_tasks`, `daily_reports`, `materials`) وكتابة الحقول المكافئة. لا تُنسخ كلمة مرور قديمة قبل تحويل hash bcrypt إلى الحقل الجديد أو اعتماد مسار انتقال آمن.
+ملف [deploy/Caddyfile](deploy/Caddyfile) يصدر ويجدد شهادة TLS تلقائياً عبر Let’s Encrypt، ويوجه الويب وواجهة API خلف نفس الدومين. افحص الحالة عبر `docker compose --env-file .env.production -f docker-compose.production.yml ps` واحتفظ بنسخ احتياطية منتظمة من volume قاعدة البيانات قبل كل ترقية.
 
-## ضمانات الاستيراد
+## تجربة Render بدون دومين
 
-1. لا يُستخدم أي ID قادم من Excel؛ قاعدة البيانات تولّد المفاتيح دائماً.
-2. خطأ `KeyError` أو `ValueError` أو `IndexError` أو `TypeError` أو خطأ PostgreSQL لا يعبر إلى المستخدم كـ traceback.
-3. تسجل الأخطاء في `fieldapp-api.log`، ويضاف صف إلى Import Review بالمصدر والسبب ونوع الاستثناء ورسالة PostgreSQL والإجراء المتخذ.
-4. الملف المعطوب نفسه ينشئ سجل مراجعة بدلاً من HTTP 500.
+يوجد [render.yaml](render.yaml) جاهز لإنشاء واجهة Next.js وFastAPI وPostgreSQL وRender Key Value. من Render اختر **New → Blueprint**، اربط مستودع GitHub، ثم اختر الفرع الذي يحتوي هذا الملف. ستحصل الواجهة على رابط `onrender.com` مع HTTPS تلقائياً.
 
-## خريطة الترحيل الوظيفية
-
-الـ API الجديدة تتضمن مهاماً، مستخدمين، استيراد Excel ومراجعته، المهام المسندة، المخزون، الإشعارات، وملخص لوحة التحكم. يبقى رفع تقارير الصور وترحيل البيانات التاريخية من Supabase/Streamlit خطوة ترحيل مستقلة؛ لا ينبغي مزجها مع إنشاء مخطط قاعدة بيانات جديد.
+الخطة المجانية مناسبة للعرض والتجربة فقط: خدمة الويب قد تتوقف عند عدم الاستخدام، وملفات صور التقارير لا تملك قرصاً دائماً، وقاعدة PostgreSQL المجانية تنتهي بعد 30 يوماً. قبل استخدام النظام فعلياً، رقِّ قاعدة البيانات والخدمات إلى خطة مدفوعة، ثم أضف الدومين من إعدادات خدمة الواجهة.
 
 ## التحقق
 
@@ -63,9 +43,3 @@ python -m compileall -q backend/app
 cd backend && ruff check app
 cd frontend && npm run build
 ```
-
-## ملاحظات النشر
-
-- استبدل كل أسرار `.env`، فعّل TLS عبر Nginx، واستخدم managed PostgreSQL مع نسخ احتياطي واختبار استعادة.
-- اضبط Redis مشتركاً إذا شغلت أكثر من نسخة API؛ broker الحالي داخل الذاكرة مناسب لنسخة واحدة فقط ويجب استبداله بـ Redis Pub/Sub للتوسع الأفقي.
-- أضف rate limiting، تخزين refresh-token/revocation، خدمة Push/VAPID، ومراقبة مركزية قبل تعريض النظام للإنترنت.

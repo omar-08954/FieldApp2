@@ -30,6 +30,11 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=8, max_length=256)
+    new_password: str = Field(min_length=10, max_length=256)
+
+
 class TaskCreate(BaseModel):
     technician_id: int | None = None
     technician_name: str = "غير مسجل"
