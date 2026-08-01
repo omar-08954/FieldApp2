@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 14
     frontend_origins: str = "http://localhost:3000"
+    initial_admin_username: str = ""
+    initial_admin_password: str = ""
+    initial_admin_name: str = "مسؤول النظام"
     ai_enabled: bool = False
     ai_base_url: str = "https://api.openai.com/v1"
     ai_api_key: str = ""

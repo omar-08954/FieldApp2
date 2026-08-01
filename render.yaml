@@ -27,6 +27,12 @@ services:
           type: web
           name: fieldapp-web
           envVarKey: RENDER_EXTERNAL_URL
+      - key: INITIAL_ADMIN_USERNAME
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+      - key: INITIAL_ADMIN_NAME
+        value: مسؤول النظام
       - key: AI_ENABLED
         value: "false"
       - key: AI_API_KEY

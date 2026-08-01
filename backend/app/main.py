@@ -5,10 +5,13 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from app.api.routes import router
 from app.core.config import get_settings
-from app.core.database import Base, engine
+from app.core.database import Base, SessionLocal, engine
+from app.core.security import hash_password
+from app.models import Role, User
 
 settings = get_settings()
 log_directory = Path(settings.logs_dir)
@@ -19,6 +22,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 async def lifespan(_: FastAPI):
     if settings.environment != "production":
         Base.metadata.create_all(bind=engine)  # Alembic owns production migrations.
+    if settings.initial_admin_username and settings.initial_admin_password:
+        db = SessionLocal()
+        try:
+            admin = db.scalar(select(User).where(User.username == settings.initial_admin_username))
+            if not admin:
+                db.add(User(
+                    username=settings.initial_admin_username,
+                    password_hash=hash_password(settings.initial_admin_password),
+                    full_name=settings.initial_admin_name,
+                    role=Role.ADMIN,
+                ))
+                db.commit()
+                logging.getLogger(__name__).info("Initial administrator account created")
+        finally:
+            db.close()
     yield
 
 app = FastAPI(title="FieldApp Enterprise API", version="1.0.0", lifespan=lifespan)
