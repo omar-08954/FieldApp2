@@ -1,0 +1,42 @@
+from app.core.security import hash_password
+
+DEFAULT_USERS = [
+    # مكة
+    {"username":"2546933363","password_hash":hash_password("1234567890"),"full_name":"علي محمد عبد الستار احمد","city":"مكة","role":"technician","is_active":True},
+    {"username":"2572308795","password_hash":hash_password("1234567890"),"full_name":"عبد الله سميح حسن مصطفى","city":"مكة","role":"technician","is_active":True},
+    {"username":"2572842553","password_hash":hash_password("1234567890"),"full_name":"السيد ماهر عبدالقادر احمد","city":"مكة","role":"technician","is_active":True},
+    {"username":"2586640878","password_hash":hash_password("1234567890"),"full_name":"ياسر فايز محمد محمد","city":"مكة","role":"technician","is_active":True},
+    {"username":"2586788511","password_hash":hash_password("1234567890"),"full_name":"عبدالرحمن عبدالله احمد عبدالله","city":"مكة","role":"technician","is_active":True},
+    {"username":"2602145456","password_hash":hash_password("1234567890"),"full_name":"احمد رضا احمد احمد","city":"مكة","role":"technician","is_active":True},
+    {"username":"2530910591","password_hash":hash_password("1234567890"),"full_name":"رضا السيد مجاهد ابراهيم","city":"مكة","role":"technician","is_active":True},
+    {"username":"2555534953","password_hash":hash_password("1234567890"),"full_name":"احمد جاد الحق محمد على","city":"مكة","role":"technician","is_active":True},
+    {"username":"2559018953","password_hash":hash_password("1234567890"),"full_name":"صلاح ادريس محمود احمد","city":"مكة","role":"technician","is_active":True},
+    {"username":"2560570372","password_hash":hash_password("1234567890"),"full_name":"شعبان محمد محمد الشب","city":"مكة","role":"technician","is_active":True},
+    {"username":"2560659936","password_hash":hash_password("1234567890"),"full_name":"ابراهيم على نجيب محمد","city":"مكة","role":"technician","is_active":True},
+    {"username":"2560659993","password_hash":hash_password("1234567890"),"full_name":"على محمد على حسن","city":"مكة","role":"technician","is_active":True},
+    {"username":"2572308704","password_hash":hash_password("1234567890"),"full_name":"محمود ابو بكر محمود حسن","city":"مكة","role":"technician","is_active":True},
+    {"username":"2575199506","password_hash":hash_password("1234567890"),"full_name":"احمد محمود السعيد عبد السلام","city":"مكة","role":"technician","is_active":True},
+    {"username":"2577868546","password_hash":hash_password("1234567890"),"full_name":"احمد عبدالجيد علي محمد","city":"مكة","role":"technician","is_active":True},
+    {"username":"2611006939","password_hash":hash_password("1234567890"),"full_name":"عبدالله فتحى","city":"مكة","role":"technician","is_active":True},
+    {"username":"2592805358","password_hash":hash_password("1234567890"),"full_name":"مهران راوى","city":"مكة","role":"technician","is_active":True},
+    {"username":"2540194418","password_hash":hash_password("1234567890"),"full_name":"محمد اياز","city":"مكة","role":"technician","is_active":True},
+
+    # جدة
+    {"username":"2559048778","password_hash":hash_password("1234567890"),"full_name":"أرسلان سجاد","city":"جدة","role":"technician","is_active":True},
+    {"username":"2616661761","password_hash":hash_password("1234567890"),"full_name":"عمر حياة","city":"جدة","role":"technician","is_active":True},
+    {"username":"2598040976","password_hash":hash_password("1234567890"),"full_name":"قاسم نواز","city":"جدة","role":"technician","is_active":True},
+    {"username":"2551162767","password_hash":hash_password("1234567890"),"full_name":"محمد راسيد","city":"جدة","role":"technician","is_active":True},
+    {"username":"2622624514","password_hash":hash_password("1234567890"),"full_name":"مزمل الدين","city":"جدة","role":"technician","is_active":True},
+    {"username":"2548956065","password_hash":hash_password("1234567890"),"full_name":"عصام صابر محمد بيومي","city":"جدة","role":"technician","is_active":True},
+    {"username":"2332575543","password_hash":hash_password("1234567890"),"full_name":"واجد علي صغير احمد مالك","city":"جدة","role":"technician","is_active":True},
+    {"username":"2445748201","password_hash":hash_password("1234567890"),"full_name":"انور حسين سواب","city":"جدة","role":"technician","is_active":True},
+    {"username":"2446744555","password_hash":hash_password("1234567890"),"full_name":"سيف ال اسلام","city":"جدة","role":"technician","is_active":True},
+    {"username":"2530323738","password_hash":hash_password("1234567890"),"full_name":"برهان عبدالله محمد","city":"جدة","role":"technician","is_active":True},
+    {"username":"2617752957","password_hash":hash_password("1234567890"),"full_name":"عربى فايز","city":"جدة","role":"technician","is_active":True},
+    {"username":"2414930459","password_hash":hash_password("1234567890"),"full_name":"تصور عباس","city":"جدة","role":"technician","is_active":True},
+    {"username":"2560715944","password_hash":hash_password("1234567890"),"full_name":"هانى صلاح","city":"جدة","role":"technician","is_active":True},
+    {"username":"2616030231","password_hash":hash_password("1234567890"),"full_name":"محمد عادل","city":"جدة","role":"technician","is_active":True},
+    {"username":"2573721483","password_hash":hash_password("1234567890"),"full_name":"زبير محمد اشرف","city":"جدة","role":"technician","is_active":True},
+    {"username":"2464975149","password_hash":hash_password("1234567890"),"full_name":"واجد على غلام مصطفى","city":"جدة","role":"technician","is_active":True},
+    {"username":"2602521425","password_hash":hash_password("1234567890"),"full_name":"محمد شكيل احمد رفيق","city":"جدة","role":"technician","is_active":True},
+]
