@@ -39,3 +39,4 @@ DEFAULT_USERS = [
     {"username":"2573721483","password_hash":hash_password("1234567890"),"full_name":"زبير محمد اشرف","city":"جدة","role":"technician","is_active":True},
     {"username":"2464975149","password_hash":hash_password("1234567890"),"full_name":"واجد على غلام مصطفى","city":"جدة","role":"technician","is_active":True},
     {"username":"2602521425","password_hash":hash_password("1234567890"),"full_name":"محمد شكيل احمد رفيق","city":"جدة","role":"technician","is_active":True},
+]
