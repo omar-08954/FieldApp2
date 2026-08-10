@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from sqlalchemy import select
+from sqlalchemy import select,
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes import router
@@ -174,7 +174,7 @@ async def lifespan(_: FastAPI):
         # ====================================================
 
         total_users = db.scalar(
-            select(User).count()
+    select(func.count()).select_from(User)
         )
 
         logger.info(
