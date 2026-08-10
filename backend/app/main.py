@@ -50,17 +50,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-
     logger.info("========== FIELDAPP STARTUP ==========")
 
-    # في بيئة التطوير فقط يتم إنشاء الجداول تلقائيًا.
-    # في الإنتاج Alembic هو المسؤول عن migrations.
     if settings.environment != "production":
         Base.metadata.create_all(bind=engine)
 
-    db = SessionLocal()
+    yield
 
-    try:
+    logger.info("========== FIELDAPP SHUTDOWN ==========")
 
 
 # ============================================================
