@@ -53,7 +53,7 @@ async def lifespan(_: FastAPI):
 
     logger.info("========== FIELDAPP STARTUP ==========")
 
-    # إنشاء الجداول في بيئة التطوير فقط.
+    # في بيئة التطوير فقط يتم إنشاء الجداول تلقائيًا.
     # في الإنتاج Alembic هو المسؤول عن migrations.
     if settings.environment != "production":
         Base.metadata.create_all(bind=engine)
@@ -63,23 +63,30 @@ async def lifespan(_: FastAPI):
     try:
 
         # ====================================================
-        # 1. إنشاء حساب الأدمن من متغيرات Render
+        # 1. تحميل المستخدمين الافتراضيين
         # ====================================================
 
-        logger.info(
-            "Initial admin username configured: %s",
-            bool(settings.initial_admin_username),
-        )
+        from app.setup_users_accounts_information import DEFAULT_USERS
 
         logger.info(
-            "Initial admin password configured: %s",
-            bool(settings.initial_admin_password),
+            "Default users loaded: %s",
+            len(DEFAULT_USERS),
         )
+
+        # ====================================================
+        # 2. إنشاء الأدمن من متغيرات Render فقط
+        # ====================================================
+
+        admin_created = 0
 
         if (
             settings.initial_admin_username
             and settings.initial_admin_password
         ):
+
+            logger.info(
+                "Initial admin credentials are configured."
+            )
 
             admin = db.scalar(
                 select(User).where(
@@ -87,7 +94,7 @@ async def lifespan(_: FastAPI):
                 )
             )
 
-            if not admin:
+            if admin is None:
 
                 admin = User(
                     username=settings.initial_admin_username,
@@ -96,13 +103,15 @@ async def lifespan(_: FastAPI):
                     ),
                     full_name=settings.initial_admin_name,
                     role=Role.ADMIN,
+                    is_active=True,
                 )
 
                 db.add(admin)
-                db.commit()
+
+                admin_created = 1
 
                 logger.info(
-                    "Initial administrator account created successfully."
+                    "Initial administrator account queued for creation."
                 )
 
             else:
@@ -114,38 +123,34 @@ async def lifespan(_: FastAPI):
         else:
 
             logger.warning(
-                "Initial admin environment variables are not configured."
+                "Initial admin environment variables are not configured. "
+                "No default administrator will be created."
             )
 
         # ====================================================
-        # 2. إنشاء المستخدمين الافتراضيين
+        # 3. إنشاء المستخدمين الافتراضيين
         # ====================================================
 
-        from app.setup_users_accounts_information import DEFAULT_USERS
-
-        logger.info(
-            "Default users loaded from setup_users_accounts_information.py: %s",
-            len(DEFAULT_USERS),
-        )
-
-        created = 0
-        skipped = 0
+        technicians_created = 0
+        technicians_skipped = 0
 
         for user_data in DEFAULT_USERS:
 
+            username = str(user_data["username"])
+
             existing = db.scalar(
                 select(User).where(
-                    User.username == user_data["username"]
+                    User.username == username
                 )
             )
 
-            if existing:
+            if existing is not None:
 
-                skipped += 1
+                technicians_skipped += 1
                 continue
 
             user = User(
-                username=user_data["username"],
+                username=username,
                 password_hash=user_data["password_hash"],
                 full_name=user_data["full_name"],
                 city=user_data["city"],
@@ -154,27 +159,41 @@ async def lifespan(_: FastAPI):
             )
 
             db.add(user)
-            created += 1
 
-        if created:
+            technicians_created += 1
+
+        # ====================================================
+        # 4. حفظ جميع المستخدمين في Transaction واحدة
+        # ====================================================
+
+        if admin_created or technicians_created:
             db.commit()
+
+        else:
+            # لا يوجد شيء جديد للحفظ.
+            db.rollback()
+
+        logger.info(
+            "Initial administrator accounts created: %s",
+            admin_created,
+        )
 
         logger.info(
             "Default technician accounts created: %s",
-            created,
+            technicians_created,
         )
 
         logger.info(
-            "Default technician accounts skipped because they already exist: %s",
-            skipped,
+            "Default technician accounts skipped: %s",
+            technicians_skipped,
         )
 
         # ====================================================
-        # 3. إظهار العدد النهائي للمستخدمين في الـ Logs
+        # 5. العدد النهائي للمستخدمين
         # ====================================================
 
         total_users = db.scalar(
-    select(func.count()).select_from(User)
+            select(func.count()).select_from(User)
         )
 
         logger.info(
@@ -182,7 +201,9 @@ async def lifespan(_: FastAPI):
             total_users,
         )
 
-        logger.info("========== FIELDAPP STARTUP COMPLETE ==========")
+        logger.info(
+            "========== FIELDAPP STARTUP COMPLETE =========="
+        )
 
     except Exception:
 
