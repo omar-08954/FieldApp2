@@ -47,7 +47,7 @@ services:
     plan: free
     rootDir: frontend
     buildCommand: npm ci && npm run build
-    startCommand: npm run start -- -p $PORT
+    startCommand: HOSTNAME=0.0.0.0 PORT=$PORT node .next/standalone/server.js
     envVars:
       - key: NODE_VERSION
         value: "22"
