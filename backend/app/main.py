@@ -1,3 +1,20 @@
+import logging
+from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.api.routes import router
+from app.core.config import get_settings
+from app.core.database import Base, SessionLocal, engine
+from app.core.security import hash_password
+from app.models import Role, User
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if settings.environment != "production":
