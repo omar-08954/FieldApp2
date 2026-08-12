@@ -2,19 +2,29 @@
 
 import { QueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { apiBase } from "@/lib/api";
 import { token } from "@/lib/auth";
 
-const base = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 const invalidatedQueries = ["summary", "tasks", "assignments", "notifications", "import-reviews", "users", "materials", "daily-reports"];
+
+function getWebSocketEndpoint(): string | null {
+  try {
+    const apiUrl = new URL(apiBase, window.location.origin);
+    apiUrl.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${apiUrl.toString().replace(/\/$/, "")}/ws/events`;
+  } catch (error) {
+    console.error("Invalid API base URL for realtime sync", error);
+    return null;
+  }
+}
 
 /** Keeps cached operational data current for every authenticated browser session. */
 export function RealtimeSync({ client }: { client: QueryClient }) {
   useEffect(() => {
     const accessToken = token();
     if (!accessToken) return;
-    const apiUrl = new URL(base, window.location.origin);
-    apiUrl.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const endpoint = `${apiUrl.toString().replace(/\/$/, "")}/ws/events`;
+    const endpoint = getWebSocketEndpoint();
+    if (!endpoint) return;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
     let socket: WebSocket | undefined;

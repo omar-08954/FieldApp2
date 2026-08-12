@@ -23,8 +23,9 @@ def seed_users() -> None:
     db = SessionLocal()
 
     admin_created = 0
+    admin_updated = 0
     technicians_created = 0
-    skipped = 0
+    technicians_updated = 0
 
     try:
         # =====================================================
@@ -61,8 +62,16 @@ def seed_users() -> None:
                     settings.initial_admin_username,
                 )
             else:
+                admin.password_hash = hash_password(
+                    settings.initial_admin_password
+                )
+                admin.full_name = settings.initial_admin_name
+                admin.role = Role.ADMIN
+                admin.is_active = True
+                admin_updated = 1
+
                 logger.info(
-                    "Initial administrator already exists: %s",
+                    "Initial administrator reset and updated: %s",
                     settings.initial_admin_username,
                 )
 
@@ -92,7 +101,12 @@ def seed_users() -> None:
             )
 
             if existing is not None:
-                skipped += 1
+                existing.password_hash = user_data["password_hash"]
+                existing.full_name = user_data["full_name"]
+                existing.city = user_data["city"]
+                existing.role = Role.TECHNICIAN
+                existing.is_active = user_data.get("is_active", True)
+                technicians_updated += 1
                 continue
 
             db.add(
@@ -124,13 +138,18 @@ def seed_users() -> None:
         )
 
         logger.info(
+            "Admin updated: %d",
+            admin_updated,
+        )
+
+        logger.info(
             "Technicians created: %d",
             technicians_created,
         )
 
         logger.info(
-            "Existing users skipped: %d",
-            skipped,
+            "Technicians updated: %d",
+            technicians_updated,
         )
 
     except Exception:
