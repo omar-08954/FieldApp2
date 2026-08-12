@@ -242,6 +242,8 @@ def users(db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
 @router.post("/users", response_model=UserPublic, status_code=201)
 async def create_user(payload: UserCreate, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     if UserRepository(db).by_username(payload.username): raise HTTPException(409, "اسم المستخدم مستخدم بالفعل")
+    if payload.role not in {Role.ADMIN, Role.MANAGER, Role.TECHNICIAN}:
+        raise HTTPException(422, "الدور المحدد غير صالح")
     from app.core.security import hash_password
     user = User(username=payload.username, password_hash=hash_password(payload.password), full_name=payload.full_name, role=payload.role, city=payload.city)
     db.add(user); db.commit(); db.refresh(user)
