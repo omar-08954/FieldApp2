@@ -14,9 +14,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 14
     frontend_origins: str = "http://localhost:3000"
-    initial_admin_username: str = "admin"
-    initial_admin_password: str = "FieldAppAdmin#2026"
+    initial_admin_username: str = ""
+    initial_admin_password: str = ""
     initial_admin_name: str = "مسؤول النظام"
+    default_technician_password: str = ""
     ai_enabled: bool = False
     ai_base_url: str = "https://api.openai.com/v1"
     ai_api_key: str = ""
@@ -34,7 +35,7 @@ class Settings(BaseSettings):
     @field_validator("database_url", mode="before")
     @classmethod
     def use_psycopg_driver(cls, value: str) -> str:
-        """Render supplies PostgreSQL URLs without an SQLAlchemy driver suffix."""
+        """Accept standard PostgreSQL URLs as supplied by managed providers."""
         url = str(value)
         if url.startswith("postgresql://"):
             return "postgresql+psycopg://" + url.removeprefix("postgresql://")

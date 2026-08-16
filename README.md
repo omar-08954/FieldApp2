@@ -34,12 +34,6 @@ docker compose --env-file .env.production -f docker-compose.production.yml up -d
 
 ملف [deploy/Caddyfile](deploy/Caddyfile) يصدر ويجدد شهادة TLS تلقائياً عبر Let’s Encrypt، ويوجه الويب وواجهة API خلف نفس الدومين. افحص الحالة عبر `docker compose --env-file .env.production -f docker-compose.production.yml ps` واحتفظ بنسخ احتياطية منتظمة من volume قاعدة البيانات قبل كل ترقية.
 
-## تجربة Render بدون دومين
-
-يوجد [render.yaml](render.yaml) جاهز لإنشاء واجهة Next.js وFastAPI وPostgreSQL وRender Key Value. من Render اختر **New → Blueprint**، اربط مستودع GitHub، ثم اختر الفرع الذي يحتوي هذا الملف. ستحصل الواجهة على رابط `onrender.com` مع HTTPS تلقائياً.
-
-الخطة المجانية مناسبة للعرض والتجربة فقط: خدمة الويب قد تتوقف عند عدم الاستخدام، وملفات صور التقارير لا تملك قرصاً دائماً، وقاعدة PostgreSQL المجانية تنتهي بعد 30 يوماً. قبل استخدام النظام فعلياً، رقِّ قاعدة البيانات والخدمات إلى خطة مدفوعة، ثم أضف الدومين من إعدادات خدمة الواجهة.
-
 ## التحقق
 
 ```bash

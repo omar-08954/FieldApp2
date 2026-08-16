@@ -23,13 +23,12 @@ def seed_users() -> None:
     db = SessionLocal()
 
     admin_created = 0
-    admin_updated = 0
     technicians_created = 0
-    technicians_updated = 0
+    technicians_existing = 0
 
     try:
         # =====================================================
-        # 1. إنشاء الأدمن من Render Environment Variables
+        # 1. إنشاء المدير الأولي من متغيرات البيئة مرة واحدة فقط.
         # =====================================================
 
         if (
@@ -62,18 +61,7 @@ def seed_users() -> None:
                     settings.initial_admin_username,
                 )
             else:
-                admin.password_hash = hash_password(
-                    settings.initial_admin_password
-                )
-                admin.full_name = settings.initial_admin_name
-                admin.role = Role.ADMIN
-                admin.is_active = True
-                admin_updated = 1
-
-                logger.info(
-                    "Initial administrator reset and updated: %s",
-                    settings.initial_admin_username,
-                )
+                logger.info("Initial administrator already exists: %s", settings.initial_admin_username)
 
         else:
             logger.warning(
@@ -82,8 +70,12 @@ def seed_users() -> None:
             )
 
         # =====================================================
-        # 2. إنشاء الفنيين الافتراضيين
+        # 2. إنشاء الفنيين الافتراضيين مرة واحدة؛ لا نعيد تفعيل أو نغير
+        # كلمات مرور الحسابات التي عدّلها المدير لاحقاً.
         # =====================================================
+
+        if not settings.default_technician_password:
+            raise RuntimeError("DEFAULT_TECHNICIAN_PASSWORD is required to create default technician accounts")
 
         logger.info(
             "Loading %d default technician accounts.",
@@ -101,18 +93,13 @@ def seed_users() -> None:
             )
 
             if existing is not None:
-                existing.password_hash = user_data["password_hash"]
-                existing.full_name = user_data["full_name"]
-                existing.city = user_data["city"]
-                existing.role = Role.TECHNICIAN
-                existing.is_active = user_data.get("is_active", True)
-                technicians_updated += 1
+                technicians_existing += 1
                 continue
 
             db.add(
                 User(
                     username=username,
-                    password_hash=user_data["password_hash"],
+                    password_hash=hash_password(settings.default_technician_password),
                     full_name=user_data["full_name"],
                     city=user_data["city"],
                     role=Role.TECHNICIAN,
@@ -138,18 +125,13 @@ def seed_users() -> None:
         )
 
         logger.info(
-            "Admin updated: %d",
-            admin_updated,
-        )
-
-        logger.info(
             "Technicians created: %d",
             technicians_created,
         )
 
         logger.info(
-            "Technicians updated: %d",
-            technicians_updated,
+            "Technicians already present: %d",
+            technicians_existing,
         )
 
     except Exception:
