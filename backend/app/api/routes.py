@@ -1,7 +1,7 @@
 import logging
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
@@ -12,7 +12,7 @@ from app.repositories import TaskRepository, UserRepository
 from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
-from app.services.report_storage import report_path, save_report_image
+from app.services.report_storage import report_bytes, save_report_image
 from app.services.events import broker
 from app.services.importer import DEFAULT_STATUS, DEFAULT_SUBSCRIPTION, import_workbook
 
@@ -63,13 +63,13 @@ def tasks(db: Db, _: CurrentUser, page: int = Query(1, ge=1), page_size: int = Q
 @router.post("/tasks", response_model=TaskPublic, status_code=201)
 async def create_task(payload: TaskCreate, db: Db, user: CurrentUser):
     task = Task(**payload.model_dump(exclude_none=True)); db.add(task); db.commit(); db.refresh(task)
-    notify_roles(db, (Role.ADMIN, Role.MANAGER), "task_created", "مهمة جديدة", f"تمت إضافة المهمة {task.task_number}"); db.commit()
+    notify_roles(db, (Role.ADMIN,), "task_created", "مهمة جديدة", f"تمت إضافة المهمة {task.task_number}"); db.commit()
     await broker.publish("task.created", {"id": task.id, "actor": user.full_name})
     return task
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskPublic)
-async def update_task(task_id: int, payload: TaskUpdate, db: Db, user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+async def update_task(task_id: int, payload: TaskUpdate, db: Db, user: User = Depends(require_roles(Role.ADMIN))):
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "المهمة غير موجودة")
@@ -77,7 +77,7 @@ async def update_task(task_id: int, payload: TaskUpdate, db: Db, user: User = De
         setattr(task, field, value)
     db.commit()
     db.refresh(task)
-    notify_roles(db, (Role.ADMIN, Role.MANAGER), "task_updated", "تم تعديل مهمة", f"تم تعديل المهمة {task.task_number}")
+    notify_roles(db, (Role.ADMIN,), "task_updated", "تم تعديل مهمة", f"تم تعديل المهمة {task.task_number}")
     db.commit()
     await broker.publish("task.updated", {"id": task.id, "actor": user.full_name})
     return task
@@ -101,13 +101,13 @@ async def excel_import(db: Db, user: CurrentUser, file: UploadFile = File(...)):
     if len(contents) > settings.max_upload_bytes:
         raise HTTPException(413, "حجم ملف Excel يتجاوز الحد المسموح")
     batch = import_workbook(db, contents, file.filename, user.id)
-    notify_roles(db, (Role.ADMIN, Role.MANAGER), "import_completed", "اكتمل استيراد Excel", f"تم استيراد {batch.imported_rows} صف ومراجعة {batch.review_rows} صف."); db.commit()
+    notify_roles(db, (Role.ADMIN,), "import_completed", "اكتمل استيراد Excel", f"تم استيراد {batch.imported_rows} صف ومراجعة {batch.review_rows} صف."); db.commit()
     await broker.publish("import.completed", {"batch_id": batch.id, "imported": batch.imported_rows, "review": batch.review_rows})
     return ImportResult(batch_id=batch.id, total_rows=batch.total_rows, imported_rows=batch.imported_rows, review_rows=batch.review_rows)
 
 
 @router.get("/import-reviews", response_model=Page[ImportReviewPublic])
-def import_reviews(db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)), page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100)):
+def import_reviews(db: Db, _: User = Depends(require_roles(Role.ADMIN)), page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100)):
     statement = select(ImportReview).where(ImportReview.status == "pending").order_by(ImportReview.created_at.desc())
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     rows = db.scalars(statement.offset((page - 1) * page_size).limit(page_size)).all()
@@ -116,7 +116,7 @@ def import_reviews(db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANA
 
 
 @router.patch("/import-reviews/{review_id}", response_model=ImportReviewPublic)
-def repair_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+def repair_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     """Store an operator correction. IDs are intentionally absent from this payload."""
     review = db.get(ImportReview, review_id)
     if not review: raise HTTPException(404, "سجل المراجعة غير موجود")
@@ -131,7 +131,7 @@ def repair_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _:
 
 
 @router.post("/import-reviews/{review_id}/reinsert")
-async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     """Retry exactly one corrected row, safely preserving the review on failure."""
     review = db.get(ImportReview, review_id)
     if not review: raise HTTPException(404, "سجل المراجعة غير موجود")
@@ -171,7 +171,7 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
 
 
 @router.post("/import-reviews/{review_id}/ignore")
-def ignore_import_review(review_id: int, db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+def ignore_import_review(review_id: int, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     review = db.get(ImportReview, review_id)
     if not review: raise HTTPException(404, "سجل المراجعة غير موجود")
     review.status = "ignored"; db.commit(); return {"ok": True}
@@ -205,7 +205,7 @@ def summary(db: Db, _: CurrentUser):
 
 
 @router.get("/reports/tasks", response_model=TaskReportSummary)
-def task_report(db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)), city: str = Query(..., min_length=1, max_length=120)):
+def task_report(db: Db, _: User = Depends(require_roles(Role.ADMIN)), city: str = Query(..., min_length=1, max_length=120)):
     """City-scoped report using aggregated queries and a small latest-tasks window."""
     statement = select(Task).where(Task.city == city)
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
@@ -235,14 +235,14 @@ async def assistant_chat(payload: AssistantMessage, db: Db, _: CurrentUser):
 
 
 @router.get("/users", response_model=list[UserPublic])
-def users(db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+def users(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     return db.scalars(select(User).order_by(User.full_name)).all()
 
 
 @router.post("/users", response_model=UserPublic, status_code=201)
 async def create_user(payload: UserCreate, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     if UserRepository(db).by_username(payload.username): raise HTTPException(409, "اسم المستخدم مستخدم بالفعل")
-    if payload.role not in {Role.ADMIN, Role.MANAGER, Role.TECHNICIAN}:
+    if payload.role not in {Role.ADMIN, Role.TECHNICIAN}:
         raise HTTPException(422, "الدور المحدد غير صالح")
     from app.core.security import hash_password
     user = User(username=payload.username, password_hash=hash_password(payload.password), full_name=payload.full_name, role=payload.role, city=payload.city)
@@ -258,7 +258,7 @@ async def update_user(user_id: int, payload: UserUpdate, db: Db, _: User = Depen
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "المستخدم غير موجود")
-    if payload.role is not None and payload.role not in {Role.ADMIN, Role.MANAGER, Role.TECHNICIAN}:
+    if payload.role is not None and payload.role not in {Role.ADMIN, Role.TECHNICIAN}:
         raise HTTPException(422, "الدور المحدد غير صالح")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
@@ -281,12 +281,12 @@ async def deactivate_user(user_id: int, db: Db, actor: User = Depends(require_ro
 
 
 @router.get("/materials", response_model=list[MaterialPublic])
-def materials(db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+def materials(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     return db.scalars(select(Material).order_by(Material.name)).all()
 
 
 @router.post("/materials", response_model=MaterialPublic, status_code=201)
-async def create_material(payload: MaterialCreate, db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+async def create_material(payload: MaterialCreate, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     if db.scalar(select(Material).where(Material.name == payload.name)): raise HTTPException(409, "هذه المادة موجودة بالفعل")
     material = Material(**payload.model_dump()); db.add(material); db.commit(); db.refresh(material)
     await broker.publish("material.created", {"id": material.id})
@@ -294,7 +294,7 @@ async def create_material(payload: MaterialCreate, db: Db, _: User = Depends(req
 
 
 @router.patch("/materials/{material_id}/quantity", response_model=MaterialPublic)
-async def adjust_material(material_id: int, delta: int, db: Db, _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+async def adjust_material(material_id: int, delta: int, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     material = db.get(Material, material_id)
     if not material: raise HTTPException(404, "المادة غير موجودة")
     if material.quantity + delta < 0: raise HTTPException(422, "الكمية المطلوبة أكبر من المخزون")
@@ -312,7 +312,7 @@ def assignments(db: Db, user: CurrentUser, technician_id: int | None = None):
 
 
 @router.post("/assignments", response_model=AssignmentPublic, status_code=201)
-async def assign(payload: AssignmentCreate, db: Db, user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER))):
+async def assign(payload: AssignmentCreate, db: Db, user: User = Depends(require_roles(Role.ADMIN))):
     if not db.get(User, payload.technician_id): raise HTTPException(422, "الفني غير موجود")
     assignment = AssignedTask(**payload.model_dump(exclude_none=True), assigned_by_id=user.id); db.add(assignment); db.commit(); db.refresh(assignment)
     db.add(Notification(user_id=assignment.technician_id, event_type="task_assigned", title="مهمة مسندة", message=f"أُسندت إليك المهمة {assignment.task_number}")); db.commit()
@@ -368,9 +368,9 @@ def daily_reports(db: Db, user: CurrentUser, technician_id: int | None = None):
 def report_image(report_id: int, db: Db, user: CurrentUser):
     report = db.get(DailyReport, report_id)
     if not report or (user.role == Role.TECHNICIAN and report.technician_id != user.id): raise HTTPException(404, "التقرير غير موجود")
-    try: path = report_path(report.image_key)
+    try: content = report_bytes(report.image_key)
     except FileNotFoundError: raise HTTPException(404, "ملف التقرير غير موجود")
-    return FileResponse(path, media_type=report.image_mime)
+    return Response(content=content, media_type=report.image_mime)
 
 
 @router.websocket("/ws/events")

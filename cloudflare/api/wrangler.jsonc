@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fieldapp-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "containers": [{ "class_name": "FieldAppApi", "image": "../../backend/Dockerfile", "max_instances": 1 }],
+  "durable_objects": { "bindings": [{ "name": "FIELDAPP_API", "class_name": "FieldAppApi" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FieldAppApi"] }],
+  "observability": { "enabled": true }
+}

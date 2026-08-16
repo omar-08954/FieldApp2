@@ -1,6 +1,6 @@
 # FieldApp Enterprise
 
-منصة لإدارة العمليات الميدانية باللغة العربية. هذه النسخة تعمل فقط بـ **Next.js + FastAPI + PostgreSQL**؛ تمت إزالة تطبيق Streamlit القديم وملفاته المرجعية.
+منصة لإدارة العمليات الميدانية باللغة العربية، مبنية بـ **Next.js + FastAPI + PostgreSQL**.
 
 ## الصفحات والوظائف
 
@@ -17,6 +17,10 @@ docker compose up --build
 ```
 
 بعد الإقلاع افتح `http://localhost`. لا تُعرّض منافذ قاعدة البيانات أو API مباشرة للإنترنت.
+
+## النشر على Cloudflare مع Supabase (المسار المعتمد)
+
+التطبيق مجهز للنشر بواجهة Next.js على Cloudflare Pages وFastAPI داخل Cloudflare Container وقاعدة PostgreSQL مستقلة في Supabase. استخدم دليل [النشر من VS Code](docs/CLOUDFLARE_SUPABASE_DEPLOYMENT.md). يشمل الدليل التخزين الدائم لصور التقارير في R2 ونسخة PostgreSQL يومية مستقلة في bucket R2 مختلف، إلى جانب نسخ Supabase اليومية وPITR.
 
 ## النشر الفعلي مع HTTPS
 

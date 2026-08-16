@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     log_max_bytes: int = 10 * 1024 * 1024
     log_backup_count: int = 10
     max_upload_bytes: int = 5 * 1024 * 1024
+    r2_endpoint_url: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -41,6 +45,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.frontend_origins.split(",") if origin.strip()]
+
+    @property
+    def uses_r2_storage(self) -> bool:
+        return all((self.r2_endpoint_url, self.r2_access_key_id, self.r2_secret_access_key, self.r2_bucket))
 
 
 @lru_cache

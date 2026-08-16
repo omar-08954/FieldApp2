@@ -7,7 +7,6 @@ from app.core.database import Base
 
 class Role(StrEnum):
     ADMIN = "admin"
-    MANAGER = "manager"
     TECHNICIAN = "technician"
 
 

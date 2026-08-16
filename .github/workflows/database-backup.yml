@@ -1,0 +1,26 @@
+name: Database backup
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dump-to-r2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL: ${{ secrets.R2_BACKUP_ENDPOINT_URL }}
+      R2_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create encrypted-in-transit PostgreSQL dump
+        run: pg_dump --format=custom --no-owner --no-privileges --file fieldapp-$(date -u +%F).dump "$DATABASE_URL"
+      - name: Upload separate immutable backup copy to R2
+        run: aws s3 cp fieldapp-$(date -u +%F).dump s3://"$R2_BUCKET"/postgres/fieldapp-$(date -u +%F).dump --endpoint-url "$AWS_ENDPOINT_URL" --sse AES256
