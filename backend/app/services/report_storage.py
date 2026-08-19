@@ -1,22 +1,29 @@
-"""Validated report storage using R2 in production and the filesystem locally."""
+"""Validated report storage using Supabase Storage in production and the filesystem locally."""
 import hashlib
-from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
-import boto3
+from urllib.parse import quote
+import httpx
 from fastapi import UploadFile
 from app.core.config import get_settings
 
 settings = get_settings()
 
 
-def _r2_client():
-    return boto3.client(
-        "s3", endpoint_url=settings.r2_endpoint_url,
-        aws_access_key_id=settings.r2_access_key_id,
-        aws_secret_access_key=settings.r2_secret_access_key,
-        region_name="auto",
-    )
+def _storage_url(key: str) -> str:
+    base = settings.supabase_url.rstrip("/")
+    bucket = quote(settings.supabase_reports_bucket, safe="")
+    return f"{base}/storage/v1/object/{bucket}/{quote(key, safe='/')}"
+
+
+def _storage_headers(content_type: str | None = None) -> dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "apikey": settings.supabase_service_role_key,
+    }
+    if content_type:
+        headers["Content-Type"] = content_type
+    return headers
 
 async def save_report_image(technician_id: int, report_date: str, file: UploadFile) -> tuple[str, str]:
     content = await file.read()
@@ -27,8 +34,10 @@ async def save_report_image(technician_id: int, report_date: str, file: UploadFi
     extension = "jpg" if mime == "image/jpeg" else "png"
     digest = hashlib.sha256(content).hexdigest()[:16]
     key = f"daily-reports/{technician_id}/{report_date}-{digest}-{uuid4().hex[:8]}.{extension}"
-    if settings.uses_r2_storage:
-        _r2_client().put_object(Bucket=settings.r2_bucket, Key=key, Body=content, ContentType=mime)
+    if settings.uses_supabase_storage:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(_storage_url(key), content=content, headers={**_storage_headers(mime), "x-upsert": "true"})
+        response.raise_for_status()
     else:
         path = Path(settings.uploads_dir) / key
         path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
@@ -43,9 +52,12 @@ def report_path(key: str) -> Path:
 
 def report_bytes(key: str) -> bytes:
     """Read a report without exposing the object-store credentials or bucket publicly."""
-    if settings.uses_r2_storage:
+    if settings.uses_supabase_storage:
         try:
-            return _r2_client().get_object(Bucket=settings.r2_bucket, Key=key)["Body"].read()
+            with httpx.Client(timeout=30) as client:
+                response = client.get(_storage_url(key), headers=_storage_headers())
+            response.raise_for_status()
+            return response.content
         except Exception as exc:
             raise FileNotFoundError from exc
     return report_path(key).read_bytes()

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     frontend_origins: str = "http://localhost:3000"
     initial_admin_username: str = ""
     initial_admin_password: str = ""
-    initial_admin_name: str = "مسؤول النظام"
+    initial_admin_name: str = "أحمد شاهين"
     default_technician_password: str = ""
     ai_enabled: bool = False
     ai_base_url: str = "https://api.openai.com/v1"
@@ -27,10 +27,9 @@ class Settings(BaseSettings):
     log_max_bytes: int = 10 * 1024 * 1024
     log_backup_count: int = 10
     max_upload_bytes: int = 5 * 1024 * 1024
-    r2_endpoint_url: str = ""
-    r2_access_key_id: str = ""
-    r2_secret_access_key: str = ""
-    r2_bucket: str = ""
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
+    supabase_reports_bucket: str = "fieldapp-reports"
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -48,8 +47,8 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.frontend_origins.split(",") if origin.strip()]
 
     @property
-    def uses_r2_storage(self) -> bool:
-        return all((self.r2_endpoint_url, self.r2_access_key_id, self.r2_secret_access_key, self.r2_bucket))
+    def uses_supabase_storage(self) -> bool:
+        return bool(self.supabase_url and self.supabase_service_role_key and self.supabase_reports_bucket)
 
 
 @lru_cache

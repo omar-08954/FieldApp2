@@ -2,6 +2,8 @@ import { Container } from "@cloudflare/containers";
 import { env } from "cloudflare:workers";
 
 type Env = { FIELDAPP_API: DurableObjectNamespace; [key: string]: string | DurableObjectNamespace | undefined };
+const secrets = env as unknown as Record<string, string | undefined>;
+const secret = (name: string): string => secrets[name] ?? "";
 
 /** A single API instance keeps websocket broadcasts coherent and runs migrations at boot. */
 export class FieldAppApi extends Container {
@@ -9,18 +11,17 @@ export class FieldAppApi extends Container {
   sleepAfter = "10m";
   envVars = {
     ENVIRONMENT: "production",
-    DATABASE_URL: env.DATABASE_URL,
-    REDIS_URL: env.REDIS_URL,
-    JWT_SECRET: env.JWT_SECRET,
-    FRONTEND_ORIGINS: env.FRONTEND_ORIGINS,
-    INITIAL_ADMIN_USERNAME: env.INITIAL_ADMIN_USERNAME,
-    INITIAL_ADMIN_PASSWORD: env.INITIAL_ADMIN_PASSWORD,
-    INITIAL_ADMIN_NAME: env.INITIAL_ADMIN_NAME,
-    DEFAULT_TECHNICIAN_PASSWORD: env.DEFAULT_TECHNICIAN_PASSWORD,
-    R2_ENDPOINT_URL: env.R2_ENDPOINT_URL,
-    R2_ACCESS_KEY_ID: env.R2_ACCESS_KEY_ID,
-    R2_SECRET_ACCESS_KEY: env.R2_SECRET_ACCESS_KEY,
-    R2_BUCKET: env.R2_BUCKET,
+    DATABASE_URL: secret("DATABASE_URL"),
+    REDIS_URL: secret("REDIS_URL"),
+    JWT_SECRET: secret("JWT_SECRET"),
+    FRONTEND_ORIGINS: secret("FRONTEND_ORIGINS"),
+    INITIAL_ADMIN_USERNAME: secret("INITIAL_ADMIN_USERNAME"),
+    INITIAL_ADMIN_PASSWORD: secret("INITIAL_ADMIN_PASSWORD"),
+    INITIAL_ADMIN_NAME: secret("INITIAL_ADMIN_NAME"),
+    DEFAULT_TECHNICIAN_PASSWORD: secret("DEFAULT_TECHNICIAN_PASSWORD"),
+    SUPABASE_URL: secret("SUPABASE_URL"),
+    SUPABASE_SERVICE_ROLE_KEY: secret("SUPABASE_SERVICE_ROLE_KEY"),
+    SUPABASE_REPORTS_BUCKET: secret("SUPABASE_REPORTS_BUCKET"),
   };
 }
 
