@@ -32,7 +32,7 @@ services:
         value: fieldapp-reports
 
   - type: web
-    name: fieldapp-frontend
+    name: fieldapp-frontend-static
     runtime: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
