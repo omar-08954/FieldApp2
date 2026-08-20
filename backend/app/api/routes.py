@@ -304,8 +304,9 @@ async def adjust_material(material_id: int, delta: int, db: Db, _: User = Depend
 
 
 @router.get("/assignments", response_model=list[AssignmentPublic])
-def assignments(db: Db, user: CurrentUser, technician_id: int | None = None):
-    statement = select(AssignedTask).where(AssignedTask.completed_at.is_(None))
+def assignments(db: Db, user: CurrentUser, technician_id: int | None = None, completed: bool = False, assigned_date: date | None = None):
+    statement = select(AssignedTask).where(AssignedTask.completed_at.is_not(None) if completed else AssignedTask.completed_at.is_(None))
+    if assigned_date: statement = statement.where(AssignedTask.assigned_date == assigned_date)
     if user.role == Role.TECHNICIAN: statement = statement.where(AssignedTask.technician_id == user.id)
     elif technician_id: statement = statement.where(AssignedTask.technician_id == technician_id)
     return db.scalars(statement.order_by(AssignedTask.assigned_date.desc())).all()

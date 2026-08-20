@@ -3,16 +3,17 @@ from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.api.routes import router
 from app.core.config import get_settings
-from app.core.database import Base, SessionLocal, engine
+from app.core.database import Base, SessionLocal, engine, get_db
 from app.core.security import hash_password
 from app.models import Role, User
 
@@ -176,7 +177,10 @@ async def unhandled_exception_handler(
 # ============================================================
 
 @app.get("/health")
-def health():
-    return {
-        "status": "ok"
-    }
+def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(select(1))
+        return {"status": "ok", "database": "ok"}
+    except SQLAlchemyError as exc:
+        logger.exception("Health check database connection failed")
+        raise HTTPException(status_code=503, detail="قاعدة البيانات غير متاحة حالياً") from exc

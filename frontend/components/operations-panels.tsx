@@ -10,40 +10,21 @@ type Review = { id: number; source_row: number; task_number?: string; technician
 
 const roleLabel = (role: User["role"]) => role === "admin" ? "مدير" : "فني";
 
-export function UsersPanel() {
+export function UsersPanel({ mode = "all" }: { mode?: "all" | "list" | "create" | "edit" | "deactivate" }) {
   const client = useQueryClient();
-  const { data = [] } = useQuery({ queryKey: ["users"], queryFn: () => api<User[]>("/users") });
+  const { data = [], isLoading, isError } = useQuery({ queryKey: ["users"], queryFn: () => api<User[]>("/users") });
   const [form, setForm] = useState({ full_name: "", username: "", password: "", role: "technician" as User["role"], city: "" });
   const [editing, setEditing] = useState<User>();
   const [message, setMessage] = useState("");
   const refresh = () => client.invalidateQueries({ queryKey: ["users"] });
-  async function submit(event: React.FormEvent) {
-    event.preventDefault(); setMessage("");
-    try { await api("/users", { method: "POST", body: JSON.stringify(form) }); setForm({ full_name: "", username: "", password: "", role: "technician", city: "" }); setMessage("تمت إضافة المستخدم."); refresh(); }
-    catch { setMessage("تعذر إضافة المستخدم. تحقق من الصلاحية والبيانات."); }
-  }
-  async function update(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!editing) return;
-    try { await api(`/users/${editing.id}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) }); setEditing(undefined); setMessage("تم حفظ بيانات المستخدم."); refresh(); }
-    catch { setMessage("تعذر تعديل المستخدم."); }
-  }
-  async function deactivate(user: User) {
-    if (!window.confirm(`تعطيل المستخدم ${user.full_name}؟`)) return;
-    try { await api(`/users/${user.id}`, { method: "DELETE" }); setMessage("تم تعطيل الحساب مع الحفاظ على السجل التاريخي."); refresh(); }
-    catch { setMessage("تعذر تعطيل المستخدم."); }
-  }
-  return <div className="grid gap-5 xl:grid-cols-[1fr_1.4fr]">
-    <form onSubmit={submit} className="panel"><h2 className="font-bold">إضافة مستخدم</h2><div className="mt-4 grid gap-3">
-      <input required placeholder="الاسم الكامل" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} className="rounded-xl border bg-transparent p-3" />
-      <input required placeholder="اسم المستخدم" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} className="rounded-xl border bg-transparent p-3" />
-      <input required minLength={10} type="password" placeholder="كلمة المرور (10 أحرف على الأقل)" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="rounded-xl border bg-transparent p-3" />
-      <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value as User["role"] })} className="rounded-xl border bg-transparent p-3"><option value="technician">فني</option><option value="admin">مدير</option></select>
-      <input placeholder="المدينة" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="rounded-xl border bg-transparent p-3" />
-    </div><button className="mt-4 w-full rounded-xl bg-brand p-3 font-semibold text-white">إضافة</button></form>
-    <div className="panel overflow-x-auto"><h2 className="mb-4 font-bold">المستخدمون</h2>{message && <p className="mb-3 rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-800">{message}</p>}
-      {editing && <form onSubmit={update} className="mb-4 grid gap-2 rounded-xl border p-3 sm:grid-cols-2"><input name="full_name" defaultValue={editing.full_name} className="rounded border bg-transparent p-2" /><select name="role" defaultValue={editing.role} className="rounded border bg-transparent p-2"><option value="technician">فني</option><option value="admin">مدير</option></select><input name="city" defaultValue={editing.city} placeholder="المدينة" className="rounded border bg-transparent p-2" /><div className="flex gap-2"><button className="rounded bg-brand px-3 py-2 text-sm text-white">حفظ</button><button type="button" onClick={() => setEditing(undefined)} className="px-2 text-sm">إلغاء</button></div></form>}
-      <table className="w-full text-right text-sm"><thead><tr className="text-slate-500"><th>الاسم</th><th>المستخدم</th><th>الدور</th><th>المدينة</th><th /></tr></thead><tbody>{data.map(user => <tr className="border-t" key={user.id}><td className="py-3">{user.full_name}</td><td>{user.username}</td><td>{roleLabel(user.role)}</td><td>{user.city || "—"}</td><td className="space-x-2 space-x-reverse"><button onClick={() => setEditing(user)} className="text-xs text-brand">تعديل</button><button onClick={() => deactivate(user)} className="text-xs text-red-600">تعطيل</button></td></tr>)}</tbody></table>
-    </div>
+  async function submit(event: React.FormEvent) { event.preventDefault(); setMessage(""); try { await api("/users", { method: "POST", body: JSON.stringify(form) }); setForm({ full_name: "", username: "", password: "", role: "technician", city: "" }); setMessage("تمت إضافة المستخدم."); refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر إضافة المستخدم."); } }
+  async function update(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); if (!editing) return; try { await api(`/users/${editing.id}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) }); setEditing(undefined); setMessage("تم حفظ بيانات المستخدم."); refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر تعديل المستخدم."); } }
+  async function deactivate(user: User) { if (!window.confirm(`تعطيل المستخدم ${user.full_name}؟`)) return; try { await api(`/users/${user.id}`, { method: "DELETE" }); setMessage("تم تعطيل الحساب مع الحفاظ على السجل التاريخي."); refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر تعطيل المستخدم."); } }
+  const showCreate = mode === "all" || mode === "create";
+  const showTable = mode !== "create";
+  return <div className={showCreate && showTable ? "grid gap-5 xl:grid-cols-[1fr_1.4fr]" : "space-y-5"}>
+    {showCreate && <form onSubmit={submit} className="panel"><h2 className="font-bold">إضافة مستخدم</h2><div className="mt-4 grid gap-3"><input required placeholder="الاسم الكامل" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} className="rounded-xl border bg-transparent p-3" /><input required placeholder="اسم المستخدم" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} className="rounded-xl border bg-transparent p-3" /><input required minLength={10} type="password" placeholder="كلمة المرور (10 أحرف على الأقل)" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="rounded-xl border bg-transparent p-3" /><select value={form.role} onChange={e => setForm({ ...form, role: e.target.value as User["role"] })} className="rounded-xl border bg-transparent p-3"><option value="technician">فني</option><option value="admin">مدير</option></select><input placeholder="المدينة" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="rounded-xl border bg-transparent p-3" /></div><button className="mt-4 w-full rounded-xl bg-brand p-3 font-semibold text-white">إضافة</button>{message && <p className="mt-3 text-sm text-slate-500">{message}</p>}</form>}
+    {showTable && <div className="panel overflow-x-auto"><h2 className="mb-4 font-bold">{mode === "edit" ? "تعديل المستخدمين" : mode === "deactivate" ? "تعطيل المستخدمين" : "المستخدمون"}</h2>{message && <p className="mb-3 rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-800">{message}</p>}{isLoading && <p className="py-5 text-sm text-slate-500">جارٍ تحميل المستخدمين…</p>}{isError && <p className="py-5 text-sm text-red-600">تعذر تحميل المستخدمين. تأكد من اتصال API وصلاحيات المدير.</p>}{editing && <form onSubmit={update} className="mb-4 grid gap-2 rounded-xl border p-3 sm:grid-cols-2"><input name="full_name" required defaultValue={editing.full_name} className="rounded border bg-transparent p-2" /><select name="role" defaultValue={editing.role} className="rounded border bg-transparent p-2"><option value="technician">فني</option><option value="admin">مدير</option></select><input name="city" defaultValue={editing.city} placeholder="المدينة" className="rounded border bg-transparent p-2" /><div className="flex gap-2"><button className="rounded bg-brand px-3 py-2 text-sm text-white">حفظ</button><button type="button" onClick={() => setEditing(undefined)} className="px-2 text-sm">إلغاء</button></div></form>}{!isLoading && !isError && <table className="w-full text-right text-sm"><thead><tr className="text-slate-500"><th>الاسم</th><th>المستخدم</th><th>الدور</th><th>المدينة</th>{mode !== "list" && <th>الإجراء</th>}</tr></thead><tbody>{data.map(user => <tr className="border-t" key={user.id}><td className="py-3">{user.full_name}</td><td>{user.username}</td><td>{roleLabel(user.role)}</td><td>{user.city || "—"}</td>{mode !== "list" && <td className="space-x-2 space-x-reverse">{mode !== "deactivate" && <button onClick={() => setEditing(user)} className="text-xs text-brand">تعديل</button>}{mode !== "edit" && <button onClick={() => deactivate(user)} className="text-xs text-red-600">تعطيل</button>}</td>}</tr>)}</tbody></table>}</div>}
   </div>;
 }
 
