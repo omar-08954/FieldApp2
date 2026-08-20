@@ -9,13 +9,20 @@ function normalizeApiBase(value: string | undefined): string {
     : `${sanitizedValue}/api/v1`;
 }
 
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export const apiBase = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
 export type Summary = { total_tasks: number; completion_rate: number; delayed_tasks: number; needs_review: number; by_status: { label: string; value: number }[]; daily_trend: { label: string; value: number }[]; latest_tasks: { id:number; task_number:string; technician_name:string; task_status:string; execution_date:string }[]; top_technicians: { label:string; value:number }[] };
-type ApiError = { detail?: string };
+type ApiErrorPayload = { detail?: string };
 
 async function responseError(response: Response): Promise<Error> {
-  const payload = await response.json().catch(() => null) as ApiError | null;
-  return new Error(payload?.detail || "تعذر إتمام الطلب. حاول مرة أخرى.");
+  const payload = await response.json().catch(() => null) as ApiErrorPayload | null;
+  return new ApiError(payload?.detail || "تعذر إتمام الطلب. حاول مرة أخرى.", response.status);
 }
 
 async function renewSession(): Promise<boolean> {
