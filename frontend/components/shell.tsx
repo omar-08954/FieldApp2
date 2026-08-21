@@ -12,8 +12,8 @@ import { ApiError, api } from "@/lib/api";
 import { clearToken, token } from "@/lib/auth";
 
 const links = [
-  ["لوحة التحكم", "/dashboard", LayoutDashboard, "all"], ["لوحة المدير", "/admin", ShieldCheck, "admin"],
-  ["المهام", "/tasks", ClipboardList, "all"], ["صفحة الفني", "/technician", Wrench, "all"],
+  ["لوحة التحكم", "/dashboard", LayoutDashboard, "admin"], ["لوحة المدير", "/admin", ShieldCheck, "admin"],
+  ["المهام", "/tasks", ClipboardList, "admin"], ["صفحة الفني", "/technician", Wrench, "all"],
   ["التقارير", "/reports", FileSpreadsheet, "admin"], ["المستودع", "/inventory", Package, "admin"],
   ["إدارة المستخدمين", "/users", Users, "admin"], ["مركز المطور", "/developer", Code2, "admin"],
   ["مراجعة الاستيراد", "/imports", UserCog, "admin"], ["الإعدادات", "/settings", Settings, "all"],
@@ -27,7 +27,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const accessToken = token();
   const { data: notifications = [] } = useQuery({ queryKey: ["notifications"], queryFn: () => api<{ id:number; is_read:boolean }[]>("/notifications"), enabled: Boolean(token()) });
   const { data: user, isLoading: userLoading, isError: userError, error: userQueryError } = useQuery({ queryKey: ["current-user"], queryFn: () => api<CurrentUser>("/auth/me"), enabled: Boolean(accessToken), retry: false });
-  const adminOnlyPaths = ["/admin", "/reports", "/inventory", "/users", "/developer", "/imports"];
+  const adminOnlyPaths = ["/", "/dashboard", "/tasks", "/admin", "/reports", "/inventory", "/users", "/developer", "/imports"];
   useEffect(() => {
     if (!accessToken) {
       router.replace("/login");
