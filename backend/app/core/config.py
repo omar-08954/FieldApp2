@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     logs_dir: str = "logs"
     log_max_bytes: int = 10 * 1024 * 1024
     log_backup_count: int = 10
-    max_upload_bytes: int = 5 * 1024 * 1024
+    max_upload_bytes: int = 25 * 1024 * 1024
     supabase_url: str = ""
     supabase_service_role_key: str = ""
     supabase_reports_bucket: str = "fieldapp-reports"
