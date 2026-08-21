@@ -55,7 +55,7 @@ def change_password(payload: PasswordChange, user: CurrentUser, db: Db):
 
 
 @router.get("/tasks", response_model=Page[TaskPublic])
-def tasks(db: Db, _: CurrentUser, page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), search: str | None = None, status: str | None = None):
+def tasks(db: Db, _: User = Depends(require_roles(Role.ADMIN)), page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), search: str | None = None, status: str | None = None):
     items, total = TaskRepository(db).list(page, page_size, search, status)
     return Page(items=items, total=total, page=page, page_size=page_size)
 
@@ -178,7 +178,7 @@ def ignore_import_review(review_id: int, db: Db, _: User = Depends(require_roles
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)
-def summary(db: Db, _: CurrentUser):
+def summary(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     total = db.scalar(select(func.count()).select_from(Task)) or 0
     completed = db.scalar(select(func.count()).select_from(Task).where(Task.task_status == "مزال")) or 0
     delayed = db.scalar(select(func.count()).select_from(Task).where(Task.task_status == "عائق")) or 0
