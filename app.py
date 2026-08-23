@@ -174,316 +174,6 @@ def technician_page():
 
     tab_add, tab_search = st.tabs(["➕ تسجيل مهمة", "🔍 بحث عن مهمة"])
 
-    with tab_add:
-        if my_city:
-            st.caption(f"المدينة المسجلة لحسابك: {my_city}")
-        with st.form("task_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                task_number = st.text_input("رقم المهمة")
-                task_type = st.selectbox("نوع المهمة", TASK_TYPES)
-            with col2:
-                subscription_number = st.text_input("رقم الاشتراك")
-                task_status = st.selectbox("حالة المهمة", TASK_STATUSES)
-            notes = st.text_area("ملاحظات (اختياري)", height=90)
-            submitted = st.form_submit_button("💾 تسجيل المهمة", width="stretch")
-
-        if submitted:
-            task_number = task_number.strip()
-            subscription_number = subscription_number.strip()
-            if not task_number or not subscription_number:
-                st.warning("يرجى إدخال رقم المهمة ورقم الاشتراك.")
-            else:
-                with st.spinner("💾 جاري حفظ المهمة..."):
-                    exists = task_exists(task_number)
-                    if not exists:
-                        add_task(
-                            st.session_state.fullname,
-                            task_number,
-                            subscription_number,
-                            task_type,
-                            task_status,
-                            city=my_city,
-                            notes=notes,
-                        )
-                if exists:
-                    st.error("❌ لا يمكن إضافة نفس رقم المهمة مرتين.")
-                else:
-                    st.success("✅ تم حفظ المهمة بنجاح.")
-
-    with tab_search:
-        st.caption("البحث يتم تلقائياً بالتسلسل: رقم المهمة ← رقم الاشتراك ← حالة المهمة ← اسم الفني.")
-        keyword = st.text_input("ابحث برقم المهمة / رقم الاشتراك / حالة المهمة / اسم الفني", key="tech_search_keyword")
-        if st.button("🔍 بحث", key="tech_search_btn", width="stretch"):
-            if not keyword.strip():
-                st.warning("يرجى إدخال قيمة للبحث.")
-            else:
-                with st.spinner("🔍 جاري البحث..."):
-                    results = search_tasks(keyword)
-                st.session_state["tech_search_results"] = results
-                if results:
-                    st.success("✅ تم العثور على المهمة.")
-                else:
-                    st.error("لم يتم العثور على مهمة مطابقة.")
-
-        results = st.session_state.get("tech_search_results", [])
-        if results:
-            df = as_df(results)
-            if len(df) > 1:
-                st.info("تم العثور على أكثر من سجل. اختر السجل المطلوب من القائمة.")
-                task_dataframe(df)
-                options = {
-                    f"{row['task_number']} - {row['subscription_number']} - {row['task_type']} - {row['task_status']}": row
-                    for _, row in df.iterrows()
-                }
-                selected_label = st.selectbox("اختر المهمة", list(options.keys()), key="tech_search_select")
-                task = options[selected_label]
-            else:
-                task = df.iloc[0].to_dict()
-
-            st.divider()
-            edit_col, delete_col = st.columns(2)
-            with edit_col:
-                st.subheader("✏️ تعديل المهمة")
-                with st.form("tech_edit_form"):
-                    new_number = st.text_input("رقم المهمة", value=task["task_number"])
-                    new_subscription = st.text_input("رقم الاشتراك", value=task["subscription_number"])
-                    new_type = st.selectbox(
-                        "نوع المهمة", TASK_TYPES,
-                        index=TASK_TYPES.index(task["task_type"]) if task["task_type"] in TASK_TYPES else 0,
-                    )
-                    new_status = st.selectbox(
-                        "حالة المهمة", TASK_STATUSES,
-                        index=TASK_STATUSES.index(task["task_status"]) if task["task_status"] in TASK_STATUSES else 0,
-                    )
-                    new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
-                    save = st.form_submit_button("✏️ حفظ التعديل", width="stretch")
-                if save:
-                    with st.spinner("✏️ جاري تحديث المهمة..."):
-                        duplicate = task_exists(new_number, exclude_id=task["id"])
-                        if not duplicate:
-                            update_task(task["id"], new_number, new_subscription, new_type, new_status, notes=new_notes)
-                    if duplicate:
-                        st.error("رقم المهمة مستخدم في مهمة أخرى.")
-                    else:
-                        st.success("✅ تم تحديث المهمة.")
-                        st.session_state.pop("tech_search_results", None)
-                        st.rerun()
-
-            with delete_col:
-                st.subheader("🗑️ حذف المهمة")
-                st.warning("هل أنت متأكد من حذف هذه المهمة؟")
-                confirm = st.checkbox("نعم، أؤكد الحذف", key="tech_delete_confirm")
-                if st.button("🗑️ حذف المهمة", disabled=not confirm, width="stretch", key="tech_delete_btn"):
-                    with st.spinner("🗑️ جاري حذف المهمة..."):
-                        delete_task(task["id"])
-                    st.success("✅ تم حذف المهمة.")
-                    st.session_state.pop("tech_search_results", None)
-                    st.rerun()
-
-
-def select_task_from_search(state_prefix, title):
-    keyword = st.text_input(title, key=f"{state_prefix}_keyword")
-    if st.button("🔍 البحث", key=f"{state_prefix}_search_btn", width="stretch"):
-        if not keyword.strip():
-            st.warning("يرجى إدخال قيمة للبحث.")
-        else:
-            with st.spinner("جاري البحث عن المهمة..."):
-                st.session_state[f"{state_prefix}_results"] = search_tasks(keyword)
-                st.session_state.pop(f"{state_prefix}_selected_id", None)
-            if st.session_state[f"{state_prefix}_results"]:
-                st.success("✅ تم العثور على المهمة")
-            else:
-                st.error("لم يتم العثور على مهمة مطابقة.")
-
-    results = st.session_state.get(f"{state_prefix}_results", [])
-    if not results:
-        return None
-
-    df = as_df(results)
-    if len(df) > 1:
-        st.info("تم العثور على أكثر من سجل. اختر السجل المطلوب من القائمة.")
-        task_dataframe(df)
-        options = {
-            f"{row['task_number']} - {row['subscription_number']} - {row['task_type']} - {row['task_status']}": row
-            for _, row in df.iterrows()
-        }
-        selected_label = st.selectbox("اختر المهمة", list(options.keys()), key=f"{state_prefix}_select")
-        return options[selected_label]
-
-    return df.iloc[0].to_dict()
-
-
-def admin_page():
-    require_login(["admin"])
-    top_nav()
-    page_header("📋 لوحة المدير", "إدارة المهام، البحث، الاستيراد، التعديل، والحذف.")
-    with st.spinner("جاري تحديث البيانات..."):
-        df = as_df(search_tasks(), ["id", "technician", "task_number", "subscription_number", "task_type", "task_status"])
-
-    tab_manage, tab_data, tab_transfer = st.tabs(["📋 إدارة المهام", "✏️ إدارة البيانات", "📥 الاستيراد والتصدير"])
-    with tab_manage:
-        total = len(df)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("إجمالي المهام", total)
-        c2.metric("المزالة", int((df["task_status"] == "مزال").sum()) if total else 0)
-        c3.metric("العوائق", int((df["task_status"] == "عائق").sum()) if total else 0)
-
-        st.divider()
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            keyword = st.text_input("بحث ذكي")
-        with col2:
-            status = st.selectbox("الحالة", ["الكل"] + TASK_STATUSES)
-        with col3:
-            task_type = st.selectbox("النوع", ["الكل"] + TASK_TYPES)
-        with st.spinner("جاري البحث عن المهمة..."):
-            filtered = as_df(search_tasks(keyword, task_type=task_type, task_status=status))
-        task_dataframe(filtered)
-        st.caption(f"عدد النتائج: {len(filtered)}")
-
-    with tab_data:
-        edit_col, delete_col = st.columns(2)
-        with edit_col:
-            st.subheader("✏️ تعديل مهمة")
-            task = select_task_from_search("edit_task", "بحث ذكي للتعديل")
-            if task:
-                with st.form("edit_form"):
-                    new_number = st.text_input("رقم المهمة", value=task["task_number"])
-                    new_subscription = st.text_input("رقم الاشتراك", value=task["subscription_number"])
-                    new_type = st.selectbox("نوع المهمة", TASK_TYPES, index=TASK_TYPES.index(task["task_type"]) if task["task_type"] in TASK_TYPES else 0)
-                    new_status = st.selectbox("حالة المهمة", TASK_STATUSES, index=TASK_STATUSES.index(task["task_status"]) if task["task_status"] in TASK_STATUSES else 0)
-                    current_city = task.get("city") if task.get("city") in CITIES else (CITIES[0] if CITIES else None)
-                    new_city = st.selectbox("المدينة", CITIES, index=CITIES.index(current_city) if current_city in CITIES else 0)
-                    new_notes = st.text_area("ملاحظات", value=task.get("notes") or "", height=90)
-                    save = st.form_submit_button("💾 حفظ التعديلات", width="stretch")
-                if save:
-                    with st.spinner("جاري حفظ التعديلات..."):
-                        duplicate = task_exists(new_number, exclude_id=task["id"])
-                        if not duplicate:
-                            update_task(task["id"], new_number, new_subscription, new_type, new_status, city=new_city, notes=new_notes)
-                    if duplicate:
-                        st.error("رقم المهمة مستخدم في مهمة أخرى.")
-                    else:
-                        st.success("✅ تم حفظ التعديلات بنجاح.")
-                        st.session_state.pop("edit_task_results", None)
-                        st.rerun()
-
-        with delete_col:
-            st.subheader("🗑 حذف مهمة")
-            task = select_task_from_search("delete_task", "بحث ذكي للحذف")
-            if task:
-                task_dataframe(as_df([task]))
-                st.warning("هل أنت متأكد من حذف المهمة؟")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("نعم، حذف", width="stretch"):
-                        with st.spinner("جاري حذف المهمة..."):
-                            delete_task(task["id"])
-                        st.success("✅ تم حذف المهمة بنجاح.")
-                        st.session_state.pop("delete_task_results", None)
-                        st.rerun()
-                with col2:
-                    if st.button("إلغاء", width="stretch"):
-                        st.session_state.pop("delete_task_results", None)
-                        st.rerun()
-
-    with tab_transfer:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("📥 استيراد Excel")
-            uploaded = st.file_uploader("اختر ملف Excel", type=["xlsx"])
-            if uploaded:
-                incoming = pd.read_excel(uploaded)
-                columns = [column for column in ["الفني", "رقم المهمة", "رقم الاشتراك", "نوع المهمة", "حالة المهمة"] if column in incoming.columns]
-                st.dataframe(incoming[columns].head(20), hide_index=True, width="stretch")
-                if st.button("بدء الاستيراد", width="stretch"):
-                    added = duplicated = 0
-                    with st.spinner("جاري استيراد البيانات..."):
-                        for _, row in incoming.iterrows():
-                            number = str(row.get("رقم المهمة", "")).strip()
-                            if not number or task_exists(number):
-                                duplicated += 1
-                                continue
-                            add_task(
-                                str(row.get("الفني", "")).strip() or "غير محدد",
-                                number,
-                                str(row.get("رقم الاشتراك", "")).strip(),
-                                str(row.get("نوع المهمة", "تقني")).strip(),
-                                str(row.get("حالة المهمة", "عائق")).strip(),
-                            )
-                            added += 1
-                    st.success(f"✅ تمت إضافة {added} مهمة، وتجاهل {duplicated} مهمة مكررة.")
-                    st.rerun()
-        with col2:
-            st.subheader("📤 تصدير Excel")
-            with st.spinner("جاري تصدير البيانات..."):
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    df.drop(columns=["id"], errors="ignore").to_excel(writer, index=False)
-            st.download_button(
-                "تحميل ملف Excel",
-                data=output.getvalue(),
-                file_name="tasks.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch",
-            )
-
-
-def _city_report_tab(city):
-    with st.spinner("جاري إنشاء التقرير..."):
-        df = as_df(search_tasks(city=city))
-    if df.empty:
-        st.info("لا توجد بيانات لهذه المدينة.")
-        return
-
-    col1, col2 = st.columns(2)
-    with col1:
-        task_type = st.selectbox("نوع المهمة", ["الكل"] + TASK_TYPES, key=f"report_type_{city}")
-    with col2:
-        task_status = st.selectbox("حالة المهمة", ["الكل"] + TASK_STATUSES, key=f"report_status_{city}")
-    keyword = st.text_input(
-        "بحث ذكي برقم المهمة أو الاشتراك أو نوع المهمة أو حالتها أو اسم الفني",
-        key=f"report_keyword_{city}",
-    )
-    with st.spinner("جاري إنشاء التقرير..."):
-        # city يُمرر دائماً لضمان عدم اختلاط بيانات المدينتين
-        filtered = as_df(search_tasks(keyword, task_type=task_type, task_status=task_status, city=city))
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("إجمالي النتائج", len(filtered))
-    c2.metric("مهام تقني", int((filtered["task_type"] == "تقني").sum()) if not filtered.empty else 0)
-    c3.metric("مهام زيرا", int((filtered["task_type"] == "زيرا").sum()) if not filtered.empty else 0)
-    task_dataframe(filtered)
-    with st.spinner("جاري تحميل التقارير..."):
-        csv = filtered.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        f"📥 تحميل تقرير {city}", csv, f"tasks_report_{city}.csv", "text/csv",
-        width="stretch", key=f"report_download_{city}",
-    )
-
-
-def reports_page():
-    require_login(["admin"])
-    top_nav()
-    page_header("📑 التقارير", "تقارير المهام حسب المدينة والنوع والحالة مع إمكانية التصدير.")
-
-    tab_jeddah, tab_makkah = st.tabs(["📍 تقارير جدة", "📍 تقارير مكة"])
-    with tab_jeddah:
-        _city_report_tab("جدة")
-    with tab_makkah:
-        _city_report_tab("مكة")
-
-
-def users_page():
-    require_login(["admin"])
-    top_nav()
-    page_header("👥 إدارة المستخدمين", "إدارة المستخدمين والصلاحيات من مكان واحد.")
-
-    with st.spinner("جاري تحديث البيانات..."):
-        users_df = as_df(get_all_users(), ["id", "username", "fullname", "role", "city", "created_at"])
-    tab_view, tab_add, tab_edit, tab_delete = st.tabs(["👥 عرض المستخدمين", "➕ إضافة مستخدم", "✏️ تعديل مستخدم", "🗑️ حذف مستخدم"])
-
     with tab_view:
         search = st.text_input("بحث بالاسم أو اسم المستخدم")
         filtered = users_df.copy()
@@ -623,8 +313,9 @@ def inventory_page():
     c2.metric("إجمالي الكمية", int(df["quantity"].sum()) if total_materials else 0)
     c3.metric("منخفضة المخزون", int((df["quantity"] <= 10).sum()) if total_materials else 0)
 
-    tab_add, tab_list, tab_manage = st.tabs(["➕ إضافة مادة", "📋 المواد", "⚙️ إدارة مادة"])
-    with tab_add:
+    tab_view, tab_manage = st.tabs(["📋 عرض المواد", "⚙️ إدارة المواد"])
+    with tab_view:
+        st.subheader("📋 عرض المواد")
         with st.form("add_material_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
@@ -648,7 +339,7 @@ def inventory_page():
                     st.success("✅ تم إضافة المادة بنجاح.")
                     st.rerun()
 
-    with tab_list:
+    with tab_view:
         search = st.text_input("بحث باسم المادة أو الوحدة أو الملاحظات")
         filtered = df.copy()
         if search:
@@ -662,6 +353,30 @@ def inventory_page():
         st.caption(f"عدد النتائج: {len(filtered)}")
 
     with tab_manage:
+        st.subheader("➕ إضافة مادة")
+        with st.form("add_material_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input("اسم المادة")
+                quantity = st.number_input("الكمية", min_value=1, step=1)
+            with col2:
+                unit = st.selectbox("الوحدة", UNITS)
+                notes = st.text_area("الملاحظات", height=100)
+            submitted = st.form_submit_button("➕ إضافة المادة", width="stretch")
+        if submitted:
+            if not name.strip():
+                st.warning("يرجى إدخال اسم المادة.")
+            else:
+                with st.spinner("جاري إضافة مادة للمستودع..."):
+                    exists = material_exists(name)
+                    if not exists:
+                        add_material(name, quantity, unit, notes)
+                if exists:
+                    st.error("هذه المادة موجودة بالفعل.")
+                else:
+                    st.success("✅ تم إضافة المادة بنجاح.")
+                    st.rerun()
+
         if df.empty:
             st.info("لا توجد مواد داخل المستودع.")
             return
