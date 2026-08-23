@@ -301,140 +301,116 @@ def user_options(df):
 
 
 def inventory_page():
-    require_login(["admin"])
-    top_nav()
-    page_header("📦 المستودع", "إدارة المواد والكميات والتنبيهات المخزنية.")
-    with st.spinner("جاري تحديث البيانات..."):
-        df = as_df(get_all_materials(), ["id", "name", "quantity", "unit", "notes"])
+      require_login(["admin"])
+      top_nav()
+      page_header("📦 المستودع", "إدارة المواد والكميات والتنبيهات المخزنية.")
+      with st.spinner("جاري تحديث البيانات..."):
+          df = as_df(get_all_materials(), ["id", "name", "quantity", "unit", "notes"])
 
-    total_materials = len(df)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("عدد المواد", total_materials)
-    c2.metric("إجمالي الكمية", int(df["quantity"].sum()) if total_materials else 0)
-    c3.metric("منخفضة المخزون", int((df["quantity"] <= 10).sum()) if total_materials else 0)
+      total_materials = len(df)
+      c1, c2, c3 = st.columns(3)
+      c1.metric("عدد المواد", total_materials)
+      c2.metric("إجمالي الكمية", int(df["quantity"].sum()) if total_materials else 0)
+      c3.metric("منخفضة المخزون", int((df["quantity"] <= 10).sum()) if total_materials else 0)
 
-    tab_view, tab_manage = st.tabs(["📋 عرض المواد", "⚙️ إدارة المواد"])
-    with tab_view:
-        st.subheader("📋 عرض المواد")
-        with st.form("add_material_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                name = st.text_input("اسم المادة")
-                quantity = st.number_input("الكمية", min_value=1, step=1)
-            with col2:
-                unit = st.selectbox("الوحدة", UNITS)
-                notes = st.text_area("الملاحظات", height=100)
-            submitted = st.form_submit_button("➕ إضافة المادة", width="stretch")
-        if submitted:
-            if not name.strip():
-                st.warning("يرجى إدخال اسم المادة.")
-            else:
-                with st.spinner("جاري إضافة مادة للمستودع..."):
-                    exists = material_exists(name)
-                    if not exists:
-                        add_material(name, quantity, unit, notes)
-                if exists:
-                    st.error("هذه المادة موجودة بالفعل.")
-                else:
-                    st.success("✅ تم إضافة المادة بنجاح.")
-                    st.rerun()
+      tab_view, tab_manage = st.tabs(["📋 عرض المواد", "⚙️ إدارة المواد"])
+      with tab_view:
+          st.subheader("📋 عرض المواد")
+          search = st.text_input("بحث باسم المادة أو الوحدة أو الملاحظات")
+          filtered = df.copy()
+          if search:
+              filtered = filtered[
+                  filtered["name"].astype(str).str.contains(search, case=False, na=False)
+                  | filtered["unit"].astype(str).str.contains(search, case=False, na=False)
+                  | filtered["notes"].astype(str).str.contains(search, case=False, na=False)
+              ]
+          display = filtered.rename(columns={"name": "اسم المادة", "quantity": "الكمية", "unit": "الوحدة", "notes": "الملاحظات", "created_at": "تاريخ الإضافة", "updated_at": "آخر تحديث"}).drop(columns=["id"], errors="ignore")
+          st.dataframe(display, hide_index=True, width="stretch")
+          st.caption(f"عدد النتائج: {len(filtered)}")
 
-    with tab_view:
-        search = st.text_input("بحث باسم المادة أو الوحدة أو الملاحظات")
-        filtered = df.copy()
-        if search:
-            filtered = filtered[
-                filtered["name"].astype(str).str.contains(search, case=False, na=False)
-                | filtered["unit"].astype(str).str.contains(search, case=False, na=False)
-                | filtered["notes"].astype(str).str.contains(search, case=False, na=False)
-            ]
-        display = filtered.rename(columns={"name": "اسم المادة", "quantity": "الكمية", "unit": "الوحدة", "notes": "الملاحظات", "created_at": "تاريخ الإضافة", "updated_at": "آخر تحديث"}).drop(columns=["id"], errors="ignore")
-        st.dataframe(display, hide_index=True, width="stretch")
-        st.caption(f"عدد النتائج: {len(filtered)}")
+      with tab_manage:
+          st.subheader("➕ إضافة مادة")
+          with st.form("add_material_form", clear_on_submit=True):
+              col1, col2 = st.columns(2)
+              with col1:
+                  name = st.text_input("اسم المادة")
+                  quantity = st.number_input("الكمية", min_value=1, step=1)
+              with col2:
+                  unit = st.selectbox("الوحدة", UNITS)
+                  notes = st.text_area("الملاحظات", height=100)
+              submitted = st.form_submit_button("➕ إضافة المادة", width="stretch")
+          if submitted:
+              if not name.strip():
+                  st.warning("يرجى إدخال اسم المادة.")
+              else:
+                  with st.spinner("جاري إضافة مادة للمستودع..."):
+                      exists = material_exists(name)
+                      if not exists:
+                          add_material(name, quantity, unit, notes)
+                  if exists:
+                      st.error("هذه المادة موجودة بالفعل.")
+                  else:
+                      st.success("✅ تم إضافة المادة بنجاح.")
+                      st.rerun()
 
-    with tab_manage:
-        st.subheader("➕ إضافة مادة")
-        with st.form("add_material_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                name = st.text_input("اسم المادة")
-                quantity = st.number_input("الكمية", min_value=1, step=1)
-            with col2:
-                unit = st.selectbox("الوحدة", UNITS)
-                notes = st.text_area("الملاحظات", height=100)
-            submitted = st.form_submit_button("➕ إضافة المادة", width="stretch")
-        if submitted:
-            if not name.strip():
-                st.warning("يرجى إدخال اسم المادة.")
-            else:
-                with st.spinner("جاري إضافة مادة للمستودع..."):
-                    exists = material_exists(name)
-                    if not exists:
-                        add_material(name, quantity, unit, notes)
-                if exists:
-                    st.error("هذه المادة موجودة بالفعل.")
-                else:
-                    st.success("✅ تم إضافة المادة بنجاح.")
-                    st.rerun()
+          if df.empty:
+              st.info("لا توجد مواد داخل المستودع.")
+              return
+          selected_name = st.selectbox("اختر المادة", sorted(df["name"].astype(str).tolist()))
+          material = df[df["name"] == selected_name].iloc[0]
+          st.success(f"الكمية الحالية: {material['quantity']} {material['unit']}")
+          if int(material["quantity"]) <= 10:
+              st.warning("هذه المادة منخفضة المخزون.")
 
-        if df.empty:
-            st.info("لا توجد مواد داخل المستودع.")
-            return
-        selected_name = st.selectbox("اختر المادة", sorted(df["name"].astype(str).tolist()))
-        material = df[df["name"] == selected_name].iloc[0]
-        st.success(f"الكمية الحالية: {material['quantity']} {material['unit']}")
-        if int(material["quantity"]) <= 10:
-            st.warning("هذه المادة منخفضة المخزون.")
+          col1, col2 = st.columns(2)
+          with col1:
+              st.subheader("✏️ تعديل المادة")
+              edit_name = st.text_input("اسم المادة", value=material["name"])
+              current_unit = material["unit"] if material["unit"] in UNITS else "أخرى"
+              edit_unit = st.selectbox("الوحدة", UNITS, index=UNITS.index(current_unit))
+              edit_notes = st.text_area("الملاحظات", value=material["notes"] or "", height=120)
+              if st.button("💾 حفظ التعديلات", width="stretch"):
+                  with st.spinner("جاري تعديل مادة..."):
+                      exists = material_exists(edit_name, exclude_id=material["id"])
+                      if not exists:
+                          update_material(material["id"], edit_name, edit_unit, edit_notes)
+                  if exists:
+                      st.error("اسم المادة مستخدم بالفعل.")
+                  else:
+                      st.success("✅ تم تعديل المادة بنجاح.")
+                      st.rerun()
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("✏️ تعديل المادة")
-            edit_name = st.text_input("اسم المادة", value=material["name"])
-            current_unit = material["unit"] if material["unit"] in UNITS else "أخرى"
-            edit_unit = st.selectbox("الوحدة", UNITS, index=UNITS.index(current_unit))
-            edit_notes = st.text_area("الملاحظات", value=material["notes"] or "", height=120)
-            if st.button("💾 حفظ التعديلات", width="stretch"):
-                with st.spinner("جاري تعديل مادة..."):
-                    exists = material_exists(edit_name, exclude_id=material["id"])
-                    if not exists:
-                        update_material(material["id"], edit_name, edit_unit, edit_notes)
-                if exists:
-                    st.error("اسم المادة مستخدم بالفعل.")
-                else:
-                    st.success("✅ تم تعديل المادة بنجاح.")
-                    st.rerun()
+          with col2:
+              st.subheader("📦 إدارة الكمية")
+              increase_qty = st.number_input("إضافة كمية", min_value=1, step=1, key="increase_qty")
+              if st.button("➕ إضافة للمخزون", width="stretch"):
+                  with st.spinner("جاري إضافة مادة للمستودع..."):
+                      increase_material(material["id"], increase_qty)
+                  st.success("✅ تمت إضافة الكمية بنجاح.")
+                  st.rerun()
 
-        with col2:
-            st.subheader("📦 إدارة الكمية")
-            increase_qty = st.number_input("إضافة كمية", min_value=1, step=1, key="increase_qty")
-            if st.button("➕ إضافة للمخزون", width="stretch"):
-                with st.spinner("جاري إضافة مادة للمستودع..."):
-                    increase_material(material["id"], increase_qty)
-                st.success("✅ تمت إضافة الكمية بنجاح.")
-                st.rerun()
+              decrease_qty = st.number_input("خصم كمية", min_value=1, step=1, key="decrease_qty")
+              if st.button("➖ خصم من المخزون", width="stretch"):
+                  with st.spinner("جاري تحديث البيانات..."):
+                      success = decrease_material(material["id"], decrease_qty)
+                  if success:
+                      st.success("✅ تم خصم الكمية بنجاح.")
+                      st.rerun()
+                  else:
+                      st.error("الكمية المطلوبة أكبر من الكمية الموجودة.")
 
-            decrease_qty = st.number_input("خصم كمية", min_value=1, step=1, key="decrease_qty")
-            if st.button("➖ خصم من المخزون", width="stretch"):
-                with st.spinner("جاري تحديث البيانات..."):
-                    success = decrease_material(material["id"], decrease_qty)
-                if success:
-                    st.success("✅ تم خصم الكمية بنجاح.")
-                    st.rerun()
-                else:
-                    st.error("الكمية المطلوبة أكبر من الكمية الموجودة.")
-
-        st.divider()
-        st.subheader("🗑 حذف المادة")
-        st.warning("هل أنت متأكد من حذف المادة؟")
-        confirm = st.checkbox("نعم، أؤكد حذف المادة نهائياً")
-        if st.button("🗑 حذف المادة", disabled=not confirm, width="stretch"):
-            with st.spinner("جاري حذف مادة..."):
-                delete_material(material["id"])
-            st.success("✅ تم حذف المادة بنجاح.")
-            st.rerun()
+          st.divider()
+          st.subheader("🗑 حذف المادة")
+          st.warning("هل أنت متأكد من حذف المادة؟")
+          confirm = st.checkbox("نعم، أؤكد حذف المادة نهائياً")
+          if st.button("🗑 حذف المادة", disabled=not confirm, width="stretch"):
+              with st.spinner("جاري حذف مادة..."):
+                  delete_material(material["id"])
+              st.success("✅ تم حذف المادة بنجاح.")
+              st.rerun()
 
 
-def change_password_page():
+    def change_password_page():
     require_login(["admin", "technician"])
     top_nav()
     page_header("🔑 تغيير كلمة المرور", f"المستخدم الحالي: {st.session_state.fullname}")
@@ -463,22 +439,26 @@ def change_password_page():
 
 
 def route():
-    if not st.session_state.get("logged_in"):
-        login_screen()
-        return
+      requested_page = st.query_params.get("page")
+      if requested_page == "tasks":
+          st.session_state.current_page = "technician"
+      if not st.session_state.get("logged_in"):
+          login_screen()
+          return
 
-    pages = {
-        "home": home_screen,
-        "dashboard": dashboard_page,
-        "admin": admin_page,
-        "technician": technician_page,
-        "reports": reports_page,
-        "inventory": inventory_page,
-        "users": users_page,
-        "change_password": change_password_page,
-    }
-    page = st.session_state.get("current_page", "home")
-    pages.get(page, home_screen)()
-
+      pages = {
+          "home": home_screen,
+          "dashboard": dashboard_page,
+          "admin": admin_page,
+          "technician": technician_page,
+          "tasks": technician_page,
+          "reports": reports_page,
+          "inventory": inventory_page,
+          "users": users_page,
+          "change_password": change_password_page,
+      }
+      page = st.session_state.get("current_page", "home")
+      pages.get(page, home_screen)()
+    
 
 route()
