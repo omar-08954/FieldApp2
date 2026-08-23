@@ -31,7 +31,13 @@ def init_page(title="FieldApp", layout="wide"):
                   if (!storage.getItem(key)) {
                       storage.setItem(key, "1");
                       const url = new URL(window.parent.location.href);
-                      url.searchParams.set("_new_tab", "1");
+                      const path = url.pathname.replace(/\/+$/, "");
+                      if (path.endsWith("/tasks")) {
+                          url.pathname = path.slice(0, -6) || "/";
+                          url.searchParams.set("page", "tasks");
+                      } else {
+                          url.searchParams.set("_new_tab", "1");
+                      }
                       window.parent.location.replace(url.toString());
                   }
               } catch (error) {
@@ -42,22 +48,9 @@ def init_page(title="FieldApp", layout="wide"):
           """,
           height=0,
       )
-    
-
-def init_session():
-    defaults = {
-        "logged_in": False,
-        "fullname": "",
-        "username": "",
-        "role": "",
-        "city": "",
-        "current_page": "login",
-    }
-    for key, value in defaults.items():
-        st.session_state.setdefault(key, value)
 
 
-def inject_style():
+    def inject_style():
     st.markdown(
         """
         <style>
@@ -165,26 +158,28 @@ def require_login(roles=None):
 
 
 def top_nav():
-    st.markdown('<div class="top-nav">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([2.4, 1, 1])
+      st.markdown('<div class="top-nav">', unsafe_allow_html=True)
+      col1, col2, col3 = st.columns([2.4, 1, 1])
       with col1:
-          st.markdown(
-              f"<div style='display:flex;align-items:center;gap:.7rem'>"
-              f"<img class='brand-logo' src='https://raw.githubusercontent.com/omar-08954/FieldApp2/main/images/logo.png' alt='شعار شركة الفكر الصاعد'>"
-              f"<span><span class='brand-title'>شركة الفكر الصاعد</span><br>"
-              f"<strong>{st.session_state.get('fullname', '')}</strong> · "
-              f"<span class='muted'>الصلاحية: {st.session_state.get('role', '')}</span></span></div>",
-              unsafe_allow_html=True,
-          )
-        with col2:
-        if st.button("🏠 الرئيسية", width="stretch"):
-            st.session_state.current_page = "home"
-            st.rerun()
-    with col3:
-        if st.button("🚪 تسجيل الخروج", width="stretch"):
-            logout()
-    st.markdown("</div>", unsafe_allow_html=True)
-
+          logo_col, info_col = st.columns([0.35, 1.65], vertical_alignment="center")
+          with logo_col:
+              st.image("images/logo.png", width=48)
+          with info_col:
+              st.markdown(
+                  f"<span class='brand-title'>شركة الفكر الصاعد</span><br>"
+                  f"<strong>{st.session_state.get('fullname', '')}</strong> · "
+                  f"<span class='muted'>الصلاحية: {st.session_state.get('role', '')}</span>",
+                  unsafe_allow_html=True,
+              )
+      with col2:
+          if st.button("🏠 الرئيسية", width="stretch"):
+              st.session_state.current_page = "home"
+              st.rerun()
+      with col3:
+          if st.button("🚪 تسجيل الخروج", width="stretch"):
+              logout()
+      st.markdown("</div>", unsafe_allow_html=True)
+  
 
     def copyright_footer():
       st.markdown(
