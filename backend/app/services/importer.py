@@ -8,8 +8,9 @@ from typing import Any
 from openpyxl import load_workbook
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
-from app.models import ImportBatch, ImportReview, Task
+from app.models import ImportBatch, ImportReview, Task, User
 
 logger = logging.getLogger(__name__)
 DEFAULT_SUBSCRIPTION = "غير مسجل"
@@ -28,6 +29,25 @@ ALIASES = {
 
 def _text(value: Any) -> str:
   return "" if value is None else str(value).strip()
+
+
+def _normalized(value: str) -> str:
+  return " ".join(value.replace("ـ", "").split()).casefold()
+
+
+def _city(value: str) -> str | None:
+  value = _text(value)
+  if not value:
+      return None
+  aliases = {"جده": "جدة", "مكه": "مكة", "المدينه": "المدينة", "المدينه المنوره": "المدينة المنورة"}
+  return aliases.get(value, value)
+
+
+class ImportValidationError(ValueError):
+  def __init__(self, field_name: str, message: str, suggestion: str) -> None:
+      super().__init__(message)
+      self.field_name = field_name
+      self.suggestion = suggestion
 
 
 def _mapping(headers: list[Any]) -> dict[str, int]:
@@ -51,6 +71,8 @@ def _review(
   values: dict[str, str] | None = None,
 ) -> None:
   values = values or {}
+  field_name = getattr(exc, "field_name", None)
+  suggestion = getattr(exc, "suggestion", None)
   db.add(
       ImportReview(
           batch_id=batch.id,
@@ -59,11 +81,14 @@ def _review(
           technician_name=values.get("technician_name"),
           subscription_number=values.get("subscription_number"),
           task_type=values.get("task_type"),
+          task_status=values.get("task_status"), city=values.get("city"), notes=values.get("notes"),
+          execution_date=date.fromisoformat(values["execution_date"]) if values.get("execution_date") else None,
+          field_name=field_name, suggested_action=suggestion,
           exception_type=type(exc).__name__,
           error_message=str(exc)[:4000],
           postgres_message=str(exc)[:4000] if isinstance(exc, SQLAlchemyError) else None,
           action_taken=action,
-          raw_payload=json.dumps(raw, ensure_ascii=False, default=str),
+          raw_payload=json.dumps({"raw": raw, "values": values}, ensure_ascii=False, default=str),
       )
   )
 
@@ -71,12 +96,13 @@ def _review(
 def task_values(values: dict[str, str]) -> dict[str, Any]:
   """Build a Task payload without ever accepting a spreadsheet primary key."""
   return {
+      "technician_id": int(values["_technician_id"]) if values.get("_technician_id") else None,
       "technician_name": values.get("technician_name") or "غير مسجل",
       "task_number": values.get("task_number", ""),
       "subscription_number": values.get("subscription_number") or DEFAULT_SUBSCRIPTION,
       "task_type": values.get("task_type") or "تقني",
       "task_status": values.get("task_status") or DEFAULT_STATUS,
-      "city": values.get("city") or None,
+      "city": _city(values.get("city", "")),
       "notes": values.get("notes") or None,
       "execution_date": date.today(),
   }
@@ -113,6 +139,10 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
   db.add(batch)
   db.flush()
   pending: list[tuple[int, list[Any], dict[str, str]]] = []
+  technician_ids = {
+      _normalized(user.full_name): str(user.id)
+      for user in db.scalars(select(User).where(User.is_active.is_(True))).all()
+  }
   try:
       workbook = load_workbook(BytesIO(contents), read_only=True, data_only=True)
       try:
@@ -132,6 +162,16 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
                   }
                   if not values.get("task_number", ""):
                       raise ValueError("رقم المهمة مطلوب")
+                  if "technician_name" in mapping:
+                      technician_name = values.get("technician_name", "")
+                      if not technician_name:
+                          raise ImportValidationError("technician_name", "اسم الفني مطلوب", "أدخل اسم الفني أو أضف الفني إلى النظام أولاً")
+                      technician_id = technician_ids.get(_normalized(technician_name))
+                      if not technician_id:
+                          raise ImportValidationError("technician_name", f"الفني «{technician_name}» غير موجود", "أضف هذا الفني إلى النظام لاحقاً ثم أعد إدراج الصف")
+                      values["_technician_id"] = technician_id
+                  if not values.get("task_type"):
+                      raise ImportValidationError("task_type", "نوع المهمة غير موجود", "أدخل نوع المهمة في هذا العمود ثم أعد إدراج الصف")
                   pending.append((row_number, raw, values))
               except Exception as exc:
                   _review(db, batch, row_number, raw, exc, "moved_to_import_review", values)

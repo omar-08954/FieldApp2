@@ -177,6 +177,12 @@ class ImportReviewPublic(BaseModel):
     technician_name: str | None
     subscription_number: str | None
     task_type: str | None
+    task_status: str | None
+    city: str | None
+    notes: str | None
+    execution_date: date | None
+    field_name: str | None
+    suggested_action: str | None
     exception_type: str
     error_message: str
     postgres_message: str | None

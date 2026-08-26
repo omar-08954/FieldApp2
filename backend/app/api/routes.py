@@ -2,7 +2,7 @@ import logging
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
@@ -18,6 +18,10 @@ from app.services.importer import DEFAULT_STATUS, DEFAULT_SUBSCRIPTION, import_w
 
 router = APIRouter()
 settings = get_settings()
+
+
+def normalized_city(value: str) -> str:
+    return {"جده": "جدة", "مكه": "مكة", "المدينه": "المدينة"}.get(value.strip(), value.strip())
 
 
 def pair(user: User) -> TokenPair:
@@ -92,6 +96,17 @@ async def delete_task(task_id: int, db: Db, _: User = Depends(require_roles(Role
     db.commit()
 
 
+@router.delete("/tasks", status_code=204)
+def delete_tasks(db: Db, task_ids: list[int] = Query(default=[]), delete_all: bool = Query(False), _: User = Depends(require_roles(Role.ADMIN))):
+    if delete_all:
+        db.execute(delete(Task))
+    elif task_ids:
+        db.execute(delete(Task).where(Task.id.in_(task_ids)))
+    else:
+        raise HTTPException(422, "اختر مهمة واحدة على الأقل للحذف")
+    db.commit()
+
+
 @router.post("/imports/excel", response_model=ImportResult)
 async def excel_import(db: Db, user: CurrentUser, file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")): raise HTTPException(422, "يرجى رفع ملف Excel بصيغة xlsx أو xlsm")
@@ -122,7 +137,7 @@ def repair_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _:
     if not review: raise HTTPException(404, "سجل المراجعة غير موجود")
     if review.status != "pending": raise HTTPException(409, "هذا السجل لم يعد بانتظار المراجعة")
     changes = payload.model_dump(exclude_unset=True)
-    for field in ("task_number", "technician_name", "subscription_number", "task_type"):
+    for field in ("task_number", "technician_name", "subscription_number", "task_type", "task_status", "city", "notes", "execution_date"):
         if field in changes:
             setattr(review, field, changes[field])
     review.action_taken = "corrected_by_operator"
@@ -136,7 +151,14 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
     review = db.get(ImportReview, review_id)
     if not review: raise HTTPException(404, "سجل المراجعة غير موجود")
     if review.status != "pending": raise HTTPException(409, "هذا السجل لم يعد بانتظار المراجعة")
-    values = payload.model_dump(exclude_none=True)
+    stored = {}
+    if review.raw_payload:
+        try:
+            decoded = __import__("json").loads(review.raw_payload)
+            stored = decoded.get("values", {}) if isinstance(decoded, dict) else {}
+        except Exception:
+            stored = {}
+    values = {**stored, **payload.model_dump(exclude_none=True)}
     task_number = values.get("task_number") or review.task_number
     if not task_number:
         return {"ok": False, "message": "رقم المهمة مطلوب قبل إعادة الإدراج"}
@@ -150,6 +172,10 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
             city=values.get("city"), notes=values.get("notes"),
             execution_date=values.get("execution_date") or date.today(),
         )
+        technician = db.scalar(select(User).where(User.full_name == task.technician_name, User.is_active.is_(True)))
+        if not technician:
+            raise HTTPException(422, "الفني غير موجود. أضفه إلى النظام ثم أعد المحاولة.")
+        task.technician_id = technician.id
         with db.begin_nested():
             db.add(task); db.flush()
         review.status = "resolved"; review.action_taken = "reinserted_by_operator"
@@ -207,6 +233,7 @@ def summary(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
 @router.get("/reports/tasks", response_model=TaskReportSummary)
 def task_report(db: Db, _: User = Depends(require_roles(Role.ADMIN)), city: str = Query(..., min_length=1, max_length=120)):
     """City-scoped report using aggregated queries and a small latest-tasks window."""
+    city = normalized_city(city)
     statement = select(Task).where(Task.city == city)
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     completed = db.scalar(select(func.count()).select_from(Task).where(Task.city == city, Task.task_status == "مزال")) or 0

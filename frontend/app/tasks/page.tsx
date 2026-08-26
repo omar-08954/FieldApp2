@@ -1,2 +1,2 @@
-import { Shell } from "@/components/shell"; import { TaskTable } from "@/components/task-table";
-export default function TasksPage() { return <Shell><TaskTable/></Shell>; }
+import { Shell } from "@/components/shell"; import { TaskManagementTable } from "@/components/task-management-table";
+export default function TasksPage() { return <Shell><TaskManagementTable/></Shell>; }
