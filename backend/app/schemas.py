@@ -204,6 +204,12 @@ class ImportReviewRepair(BaseModel):
     execution_date: date | None = None
 
 
+class ImportBulkTechnicianRepair(BaseModel):
+    source_name: str = Field(min_length=1, max_length=200)
+    target_name: str = Field(min_length=1, max_length=200)
+    reinsert: bool = True
+
+
 class NotificationPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

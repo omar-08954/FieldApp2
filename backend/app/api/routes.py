@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket
@@ -9,12 +10,12 @@ from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.models import AssignedTask, DailyReport, ImportReview, Material, Notification, Role, Task, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import report_bytes, save_report_image
 from app.services.events import broker
-from app.services.importer import DEFAULT_STATUS, DEFAULT_SUBSCRIPTION, import_workbook
+from app.services.importer import DEFAULT_STATUS, DEFAULT_SUBSCRIPTION, _city, _normalized, import_workbook, match_technician
 
 router = APIRouter()
 settings = get_settings()
@@ -145,6 +146,40 @@ def repair_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _:
     return review
 
 
+@router.post("/import-reviews/bulk-technician")
+def bulk_repair_technician(payload: ImportBulkTechnicianRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+    """Correct all pending rows for one spelling and optionally reinsert them."""
+    technicians = list(db.scalars(select(User).where(User.is_active.is_(True))).all())
+    target = match_technician(payload.target_name, technicians)
+    if not target:
+        raise HTTPException(422, "اسم الفني المستهدف غير موجود أو غير واضح")
+    reviews = [row for row in db.scalars(select(ImportReview).where(ImportReview.status == "pending")).all() if _normalized(row.technician_name or "") == _normalized(payload.source_name)]
+    corrected = inserted = failed = 0
+    for review in reviews:
+        review.technician_name = target.full_name
+        review.field_name = None
+        review.suggested_action = None
+        review.action_taken = "bulk_corrected_by_operator"
+        corrected += 1
+        if not payload.reinsert:
+            continue
+        try:
+            values = {}
+            if review.raw_payload:
+                decoded = json.loads(review.raw_payload)
+                values = decoded.get("values", {}) if isinstance(decoded, dict) else {}
+            task = Task(technician_id=target.id, technician_name=target.full_name, task_number=values.get("task_number") or review.task_number or "", subscription_number=values.get("subscription_number") or review.subscription_number or DEFAULT_SUBSCRIPTION, task_type=values.get("task_type") or review.task_type or "تقني", task_status=values.get("task_status") or review.task_status or DEFAULT_STATUS, city=_city(values.get("city") or review.city or ""), notes=values.get("notes") or review.notes, execution_date=date.fromisoformat(str(values.get("execution_date") or review.execution_date)) if (values.get("execution_date") or review.execution_date) else date.today())
+            if not task.task_number:
+                raise ValueError("رقم المهمة مطلوب")
+            with db.begin_nested():
+                db.add(task); db.flush()
+            review.status = "resolved"; review.action_taken = "bulk_corrected_and_reinserted"; inserted += 1
+        except Exception as exc:
+            failed += 1; review.action_taken = "bulk_corrected_kept_for_review"; review.exception_type = type(exc).__name__; review.error_message = str(exc)[:4000]
+    db.commit()
+    return {"matched": len(reviews), "corrected": corrected, "inserted": inserted, "failed": failed}
+
+
 @router.post("/import-reviews/{review_id}/reinsert")
 async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     """Retry exactly one corrected row, safely preserving the review on failure."""
@@ -154,7 +189,7 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
     stored = {}
     if review.raw_payload:
         try:
-            decoded = __import__("json").loads(review.raw_payload)
+            decoded = json.loads(review.raw_payload)
             stored = decoded.get("values", {}) if isinstance(decoded, dict) else {}
         except Exception:
             stored = {}
@@ -169,13 +204,14 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
             subscription_number=values.get("subscription_number") or review.subscription_number or DEFAULT_SUBSCRIPTION,
             task_type=values.get("task_type") or review.task_type or "تقني",
             task_status=values.get("task_status") or DEFAULT_STATUS,
-            city=values.get("city"), notes=values.get("notes"),
-            execution_date=values.get("execution_date") or date.today(),
+            city=_city(values.get("city") or review.city or ""), notes=values.get("notes") or review.notes,
+            execution_date=date.fromisoformat(str(values.get("execution_date") or review.execution_date)) if (values.get("execution_date") or review.execution_date) else date.today(),
         )
-        technician = db.scalar(select(User).where(User.full_name == task.technician_name, User.is_active.is_(True)))
+        technician = match_technician(task.technician_name, list(db.scalars(select(User).where(User.is_active.is_(True))).all()))
         if not technician:
             raise HTTPException(422, "الفني غير موجود. أضفه إلى النظام ثم أعد المحاولة.")
         task.technician_id = technician.id
+        task.technician_name = technician.full_name
         with db.begin_nested():
             db.add(task); db.flush()
         review.status = "resolved"; review.action_taken = "reinserted_by_operator"

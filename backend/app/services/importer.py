@@ -1,6 +1,7 @@
 """Fast, fault-isolated Excel import with batched database writes."""
 import json
 import logging
+from difflib import SequenceMatcher
 from datetime import date
 from io import BytesIO
 from typing import Any
@@ -41,6 +42,30 @@ def _city(value: str) -> str | None:
       return None
   aliases = {"جده": "جدة", "مكه": "مكة", "المدينه": "المدينة", "المدينه المنوره": "المدينة المنورة"}
   return aliases.get(value, value)
+
+
+def match_technician(name: str, users: list[User]) -> User | None:
+  """Match spelling variants and abbreviated Arabic names only when unambiguous."""
+  normalized_name = _normalized(name)
+  exact = [user for user in users if _normalized(user.full_name) == normalized_name]
+  if len(exact) == 1:
+      return exact[0]
+  source_tokens = set(normalized_name.split())
+  candidates = []
+  for user in users:
+      target = _normalized(user.full_name)
+      target_tokens = set(target.split())
+      subset = len(source_tokens) >= 2 and source_tokens.issubset(target_tokens)
+      similarity = SequenceMatcher(None, normalized_name, target).ratio()
+      if subset or similarity >= 0.86:
+          candidates.append((subset, similarity, user))
+  if len(candidates) == 1:
+      return candidates[0][2]
+  if candidates:
+      candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+      if len(candidates) == 1 or candidates[0][:2] > candidates[1][:2]:
+          return candidates[0][2]
+  return None
 
 
 class ImportValidationError(ValueError):
@@ -139,10 +164,7 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
   db.add(batch)
   db.flush()
   pending: list[tuple[int, list[Any], dict[str, str]]] = []
-  technician_ids = {
-      _normalized(user.full_name): str(user.id)
-      for user in db.scalars(select(User).where(User.is_active.is_(True))).all()
-  }
+  technicians = list(db.scalars(select(User).where(User.is_active.is_(True))).all())
   try:
       workbook = load_workbook(BytesIO(contents), read_only=True, data_only=True)
       try:
@@ -166,10 +188,12 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
                       technician_name = values.get("technician_name", "")
                       if not technician_name:
                           raise ImportValidationError("technician_name", "اسم الفني مطلوب", "أدخل اسم الفني أو أضف الفني إلى النظام أولاً")
-                      technician_id = technician_ids.get(_normalized(technician_name))
-                      if not technician_id:
-                          raise ImportValidationError("technician_name", f"الفني «{technician_name}» غير موجود", "أضف هذا الفني إلى النظام لاحقاً ثم أعد إدراج الصف")
-                      values["_technician_id"] = technician_id
+                      technician = match_technician(technician_name, technicians)
+                      if not technician:
+                          names = "، ".join(user.full_name for user in technicians[:3])
+                          raise ImportValidationError("technician_name", f"الفني «{technician_name}» غير موجود أو غير واضح", f"صحح اسم الفني أو أضفه للنظام. أمثلة أسماء مسجلة: {names}")
+                      values["technician_name"] = technician.full_name
+                      values["_technician_id"] = str(technician.id)
                   if not values.get("task_type"):
                       raise ImportValidationError("task_type", "نوع المهمة غير موجود", "أدخل نوع المهمة في هذا العمود ثم أعد إدراج الصف")
                   pending.append((row_number, raw, values))
