@@ -25,8 +25,9 @@ export function ImportReviewPanel() {
         setMessage(result.ok ? "تمت إعادة إدراج المهمة بعد تصحيح العمود المتأثر." : result.message ?? "بقي السجل في المراجعة.");
         if (result.ok) setEditing(undefined);
       } else {
-        await api(`/import-reviews/${editing.id}`, { method: "PATCH", body: JSON.stringify(values) });
-        setMessage("تم حفظ تصحيح العمود المحدد. راجع الصف ثم أعد إدراجه.");
+        const result = await api<{ ok: boolean; message?: string }>(`/import-reviews/${editing.id}/reinsert`, { method: "POST", body: JSON.stringify(values) });
+        setMessage(result.ok ? "تم تصحيح المهمة وإعادة إدراجها بنجاح." : result.message ?? "بقي السجل في المراجعة.");
+        if (result.ok) setEditing(undefined);
       }
       refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر تنفيذ الإجراء."); }

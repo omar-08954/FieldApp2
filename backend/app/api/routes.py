@@ -227,7 +227,7 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
             review.postgres_message = str(exc)[:4000] if isinstance(exc, SQLAlchemyError) else None
             review.action_taken = "reinsertion_failed_kept_for_review"
             db.commit()
-        return {"ok": False, "message": "تعذرت إعادة الإدراج؛ بقي السجل في المراجعة."}
+        return {"ok": False, "message": f"تعذرت إعادة الإدراج: {str(exc)[:300]} — بقي السجل في المراجعة."}
     await broker.publish("import.review.reinserted", {"review_id": review_id})
     return {"ok": True, "task_id": task.id}
 
