@@ -117,9 +117,9 @@ async def excel_import(db: Db, user: CurrentUser, file: UploadFile = File(...)):
     if len(contents) > settings.max_upload_bytes:
         raise HTTPException(413, "حجم ملف Excel يتجاوز الحد المسموح")
     batch = import_workbook(db, contents, file.filename, user.id)
-    notify_roles(db, (Role.ADMIN,), "import_completed", "اكتمل استيراد Excel", f"تم استيراد {batch.imported_rows} صف ومراجعة {batch.review_rows} صف."); db.commit()
-    await broker.publish("import.completed", {"batch_id": batch.id, "imported": batch.imported_rows, "review": batch.review_rows})
-    return ImportResult(batch_id=batch.id, total_rows=batch.total_rows, imported_rows=batch.imported_rows, review_rows=batch.review_rows)
+    notify_roles(db, (Role.ADMIN,), "import_completed", "اكتمل استيراد Excel", f"تم استيراد {batch.imported_rows} صف ومراجعة {batch.review_rows} صف وتجاهل {batch.skipped_rows} صف."); db.commit()
+    await broker.publish("import.completed", {"batch_id": batch.id, "imported": batch.imported_rows, "review": batch.review_rows, "skipped": batch.skipped_rows})
+    return ImportResult(batch_id=batch.id, total_rows=batch.total_rows, imported_rows=batch.imported_rows, review_rows=batch.review_rows, skipped_rows=batch.skipped_rows)
 
 
 @router.get("/import-reviews", response_model=Page[ImportReviewPublic])

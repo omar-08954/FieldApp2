@@ -164,6 +164,7 @@ class ImportResult(BaseModel):
     total_rows: int
     imported_rows: int
     review_rows: int
+    skipped_rows: int
 
 
 class ImportReviewPublic(BaseModel):

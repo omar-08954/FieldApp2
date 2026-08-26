@@ -165,6 +165,8 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
   db.flush()
   pending: list[tuple[int, list[Any], dict[str, str]]] = []
   technicians = list(db.scalars(select(User).where(User.is_active.is_(True))).all())
+  existing_task_numbers = set(db.scalars(select(Task.task_number)).all())
+  seen_task_numbers: set[str] = set()
   try:
       workbook = load_workbook(BytesIO(contents), read_only=True, data_only=True)
       try:
@@ -175,15 +177,24 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
               raise ValueError("لم يتم العثور على عمود رقم المهمة في الملف")
           for row_number, raw_tuple in enumerate(rows, start=2):
               raw = list(raw_tuple)
-              batch.total_rows += 1
               values: dict[str, str] = {}
               try:
                   values = {
                       field: _text(raw[index]) if index < len(raw) else ""
                       for field, index in mapping.items()
                   }
+                  # Excel reports often contain formatting/serial-only rows after the data.
+                  if not any(values.values()):
+                      batch.skipped_rows += 1
+                      continue
+                  batch.total_rows += 1
                   if not values.get("task_number", ""):
                       raise ValueError("رقم المهمة مطلوب")
+                  task_number = values["task_number"]
+                  if task_number in existing_task_numbers or task_number in seen_task_numbers:
+                      batch.skipped_rows += 1
+                      continue
+                  seen_task_numbers.add(task_number)
                   if "technician_name" in mapping:
                       technician_name = values.get("technician_name", "")
                       if not technician_name:

@@ -90,6 +90,7 @@ class ImportBatch(Base):
     total_rows: Mapped[int] = mapped_column(Integer, default=0)
     imported_rows: Mapped[int] = mapped_column(Integer, default=0)
     review_rows: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_rows: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
