@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from app.models import ImportBatch, ImportReview, Task, User
+from app.models import ImportBatch, ImportReview, Task, TechnicianAlias, User
 
 logger = logging.getLogger(__name__)
 DEFAULT_SUBSCRIPTION = "غير مسجل"
@@ -44,9 +44,11 @@ def _city(value: str) -> str | None:
   return aliases.get(value, value)
 
 
-def match_technician(name: str, users: list[User]) -> User | None:
+def match_technician(name: str, users: list[User], aliases: dict[str, int] | None = None) -> User | None:
   """Match spelling variants and abbreviated Arabic names only when unambiguous."""
   normalized_name = _normalized(name)
+  if aliases and normalized_name in aliases:
+      return next((user for user in users if user.id == aliases[normalized_name]), None)
   exact = [user for user in users if _normalized(user.full_name) == normalized_name]
   if len(exact) == 1:
       return exact[0]
@@ -165,6 +167,7 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
   db.flush()
   pending: list[tuple[int, list[Any], dict[str, str]]] = []
   technicians = list(db.scalars(select(User).where(User.is_active.is_(True))).all())
+  aliases = {_normalized(alias.alias_name): alias.technician_id for alias in db.scalars(select(TechnicianAlias)).all()}
   existing_task_numbers = set(db.scalars(select(Task.task_number)).all())
   seen_task_numbers: set[str] = set()
   try:
@@ -199,7 +202,7 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
                       technician_name = values.get("technician_name", "")
                       if not technician_name:
                           raise ImportValidationError("technician_name", "اسم الفني مطلوب", "أدخل اسم الفني أو أضف الفني إلى النظام أولاً")
-                      technician = match_technician(technician_name, technicians)
+                      technician = match_technician(technician_name, technicians, aliases)
                       if not technician:
                           names = "، ".join(user.full_name for user in technicians[:3])
                           raise ImportValidationError("technician_name", f"الفني «{technician_name}» غير موجود أو غير واضح", f"صحح اسم الفني أو أضفه للنظام. أمثلة أسماء مسجلة: {names}")

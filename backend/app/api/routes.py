@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
-from app.models import AssignedTask, DailyReport, ImportReview, Material, Notification, Role, Task, User
+from app.models import AssignedTask, DailyReport, ImportReview, Material, Notification, Role, Task, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
 from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
@@ -23,6 +23,17 @@ settings = get_settings()
 
 def normalized_city(value: str) -> str:
     return {"جده": "جدة", "مكه": "مكة", "المدينه": "المدينة"}.get(value.strip(), value.strip())
+
+
+def remember_technician_alias(db, alias_name: str | None, technician: User) -> None:
+    alias = (alias_name or "").strip()
+    if not alias or _normalized(alias) == _normalized(technician.full_name):
+        return
+    existing = db.scalar(select(TechnicianAlias).where(TechnicianAlias.alias_name == _normalized(alias)))
+    if existing:
+        existing.technician_id = technician.id
+    else:
+        db.add(TechnicianAlias(alias_name=_normalized(alias), technician_id=technician.id))
 
 
 def pair(user: User) -> TokenPair:
@@ -153,6 +164,7 @@ def bulk_repair_technician(payload: ImportBulkTechnicianRepair, db: Db, _: User 
     target = match_technician(payload.target_name, technicians)
     if not target:
         raise HTTPException(422, "اسم الفني المستهدف غير موجود أو غير واضح")
+    remember_technician_alias(db, payload.source_name, target)
     reviews = [row for row in db.scalars(select(ImportReview).where(ImportReview.status == "pending")).all() if _normalized(row.technician_name or "") == _normalized(payload.source_name)]
     corrected = inserted = failed = 0
     for review in reviews:
@@ -207,11 +219,13 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
             city=_city(values.get("city") or review.city or ""), notes=values.get("notes") or review.notes,
             execution_date=date.fromisoformat(str(values.get("execution_date") or review.execution_date)) if (values.get("execution_date") or review.execution_date) else date.today(),
         )
-        technician = match_technician(task.technician_name, list(db.scalars(select(User).where(User.is_active.is_(True))).all()))
+        original_name = task.technician_name
+        technician = match_technician(original_name, list(db.scalars(select(User).where(User.is_active.is_(True))).all()))
         if not technician:
             raise HTTPException(422, "الفني غير موجود. أضفه إلى النظام ثم أعد المحاولة.")
         task.technician_id = technician.id
         task.technician_name = technician.full_name
+        remember_technician_alias(db, original_name, technician)
         with db.begin_nested():
             db.add(task); db.flush()
         review.status = "resolved"; review.action_taken = "reinserted_by_operator"

@@ -28,6 +28,14 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class TechnicianAlias(Base):
+    __tablename__ = "technician_aliases"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alias_name: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    technician_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Task(Base):
     __tablename__ = "tasks"
     id: Mapped[int] = mapped_column(primary_key=True)
