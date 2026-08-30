@@ -14,12 +14,12 @@ export function UsersPanel({ mode = "all" }: { mode?: "all" | "list" | "create" 
   const client = useQueryClient();
   const { data = [], isLoading, isError } = useQuery({ queryKey: ["users"], queryFn: () => api<User[]>("/users") });
   const [form, setForm] = useState({ full_name: "", username: "", password: "", role: "technician" as User["role"], city: "" });
-  const [editing, setEditing] = useState<User>();
+  const [editing, setEditing] = useState<User>(); const [busyUser, setBusyUser] = useState<number>();
   const [message, setMessage] = useState("");
   const refresh = () => client.invalidateQueries({ queryKey: ["users"] });
   async function submit(event: React.FormEvent) { event.preventDefault(); setMessage(""); try { await api("/users", { method: "POST", body: JSON.stringify(form) }); setForm({ full_name: "", username: "", password: "", role: "technician", city: "" }); setMessage("تمت إضافة المستخدم."); refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر إضافة المستخدم."); } }
   async function update(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); if (!editing) return; try { await api(`/users/${editing.id}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) }); setEditing(undefined); setMessage("تم حفظ بيانات المستخدم."); refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر تعديل المستخدم."); } }
-  async function deactivate(user: User) { if (!window.confirm(`تعطيل المستخدم ${user.full_name}؟`)) return; try { await api(`/users/${user.id}`, { method: "DELETE" }); setMessage("تم تعطيل الحساب مع الحفاظ على السجل التاريخي."); refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر تعطيل المستخدم."); } }
+  async function deactivate(user: User) { if (!window.confirm(`تعطيل المستخدم ${user.full_name}؟`)) return; setBusyUser(user.id); setMessage("جارٍ تعطيل المستخدم…"); try { await api(`/users/${user.id}`, { method: "DELETE" }); setMessage("تم تعطيل الحساب مع الحفاظ على السجل التاريخي."); refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر تعطيل المستخدم."); } finally { setBusyUser(undefined); } }
   const showCreate = mode === "all" || mode === "create";
   const showTable = mode !== "create";
   return <div className={showCreate && showTable ? "grid gap-5 xl:grid-cols-[1fr_1.4fr]" : "space-y-5"}>

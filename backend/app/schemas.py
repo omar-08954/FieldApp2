@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
@@ -157,6 +157,10 @@ class DeveloperStatus(BaseModel):
     pending_import_reviews: int
     unread_notifications: int
     ai_enabled: bool
+
+
+class CleanupRequest(BaseModel):
+    scope: Literal["tasks", "import_reviews"]
 
 
 class ImportResult(BaseModel):

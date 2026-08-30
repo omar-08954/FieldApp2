@@ -208,6 +208,8 @@ def import_workbook(db: Session, contents: bytes, filename: str, imported_by_id:
                           raise ImportValidationError("technician_name", f"الفني «{technician_name}» غير موجود أو غير واضح", f"صحح اسم الفني أو أضفه للنظام. أمثلة أسماء مسجلة: {names}")
                       values["technician_name"] = technician.full_name
                       values["_technician_id"] = str(technician.id)
+                      if not values.get("city") and technician.city:
+                          values["city"] = technician.city
                   if not values.get("task_type"):
                       raise ImportValidationError("task_type", "نوع المهمة غير موجود", "أدخل نوع المهمة في هذا العمود ثم أعد إدراج الصف")
                   pending.append((row_number, raw, values))

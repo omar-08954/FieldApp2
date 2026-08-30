@@ -10,7 +10,7 @@ from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.models import AssignedTask, DailyReport, ImportReview, Material, Notification, Role, Task, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import report_bytes, save_report_image
@@ -180,7 +180,7 @@ def bulk_repair_technician(payload: ImportBulkTechnicianRepair, db: Db, _: User 
             if review.raw_payload:
                 decoded = json.loads(review.raw_payload)
                 values = decoded.get("values", {}) if isinstance(decoded, dict) else {}
-            task = Task(technician_id=target.id, technician_name=target.full_name, task_number=values.get("task_number") or review.task_number or "", subscription_number=values.get("subscription_number") or review.subscription_number or DEFAULT_SUBSCRIPTION, task_type=values.get("task_type") or review.task_type or "تقني", task_status=values.get("task_status") or review.task_status or DEFAULT_STATUS, city=_city(values.get("city") or review.city or ""), notes=values.get("notes") or review.notes, execution_date=date.fromisoformat(str(values.get("execution_date") or review.execution_date)) if (values.get("execution_date") or review.execution_date) else date.today())
+            task = Task(technician_id=target.id, technician_name=target.full_name, task_number=values.get("task_number") or review.task_number or "", subscription_number=values.get("subscription_number") or review.subscription_number or DEFAULT_SUBSCRIPTION, task_type=values.get("task_type") or review.task_type or "تقني", task_status=values.get("task_status") or review.task_status or DEFAULT_STATUS, city=_city(values.get("city") or review.city or target.city or ""), notes=values.get("notes") or review.notes, execution_date=date.fromisoformat(str(values.get("execution_date") or review.execution_date)) if (values.get("execution_date") or review.execution_date) else date.today())
             if not task.task_number:
                 raise ValueError("رقم المهمة مطلوب")
             with db.begin_nested():
@@ -225,6 +225,8 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
             raise HTTPException(422, "الفني غير موجود. أضفه إلى النظام ثم أعد المحاولة.")
         task.technician_id = technician.id
         task.technician_name = technician.full_name
+        if not task.city and technician.city:
+            task.city = technician.city
         remember_technician_alias(db, original_name, technician)
         with db.begin_nested():
             db.add(task); db.flush()
@@ -303,6 +305,18 @@ def developer_status(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
         unread_notifications=db.scalar(select(func.count()).select_from(Notification).where(Notification.is_read.is_(False))) or 0,
         ai_enabled=settings.ai_enabled and bool(settings.ai_api_key),
     )
+
+
+@router.post("/developer/cleanup")
+def cleanup_database(payload: CleanupRequest, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+    """Delete only the explicitly selected operational scope; users are never deleted."""
+    if payload.scope == "tasks":
+        deleted = db.query(Task).delete(synchronize_session=False)
+        db.commit()
+        return {"scope": payload.scope, "deleted": deleted, "message": "تم تنظيف جدول المهام فقط. المستخدمون والتقارير لم تتأثر."}
+    deleted = db.query(ImportReview).delete(synchronize_session=False)
+    db.commit()
+    return {"scope": payload.scope, "deleted": deleted, "message": "تم تنظيف مراجعة الاستيراد فقط. المهام والمستخدمون لم تتأثر."}
 
 
 @router.post("/assistant/chat", response_model=AssistantReply)
@@ -426,6 +440,9 @@ async def upload_daily_report(db: Db, user: CurrentUser, report_date: str, image
     from datetime import date
     try: parsed_date = date.fromisoformat(report_date); key, mime = await save_report_image(user.id, report_date, image)
     except ValueError as exc: raise HTTPException(422, str(exc))
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Daily report upload failed", extra={"technician_id": user.id})
+        raise HTTPException(502, "تعذر حفظ التقرير في التخزين. تحقق من إعدادات Supabase Storage.") from exc
     report = db.scalar(select(DailyReport).where(DailyReport.technician_id == user.id, DailyReport.report_date == parsed_date))
     if report: report.image_key, report.image_mime = key, mime
     else: report = DailyReport(technician_id=user.id, report_date=parsed_date, image_key=key, image_mime=mime); db.add(report)

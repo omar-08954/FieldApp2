@@ -5,7 +5,8 @@ from sqlalchemy import select
 from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.core.config import get_settings
-from app.models import User, Role
+from app.models import Task, TechnicianAlias, User, Role
+from app.services.importer import _normalized, match_technician
 from app.setup_users_accounts_information import DEFAULT_USERS
 
 
@@ -74,9 +75,6 @@ def seed_users() -> None:
         # كلمات مرور الحسابات التي عدّلها المدير لاحقاً.
         # =====================================================
 
-        if not settings.default_technician_password:
-            raise RuntimeError("DEFAULT_TECHNICIAN_PASSWORD is required to create default technician accounts")
-
         logger.info(
             "Loading %d default technician accounts.",
             len(DEFAULT_USERS),
@@ -99,7 +97,7 @@ def seed_users() -> None:
             db.add(
                 User(
                     username=username,
-                    password_hash=hash_password(settings.default_technician_password),
+                    password_hash=user_data.get("password_hash") or hash_password(settings.default_technician_password),
                     full_name=user_data["full_name"],
                     city=user_data["city"],
                     role=Role.TECHNICIAN,
@@ -108,6 +106,19 @@ def seed_users() -> None:
             )
 
             technicians_created += 1
+
+        # Repair ownership/city for tasks imported before technician matching was added.
+        technicians = list(db.scalars(select(User).where(User.is_active.is_(True))).all())
+        aliases = {_normalized(alias.alias_name): alias.technician_id for alias in db.scalars(select(TechnicianAlias)).all()}
+        tasks_repaired = 0
+        for task in db.scalars(select(Task).where(Task.technician_name != "غير مسجل")).all():
+            technician = match_technician(task.technician_name, technicians, aliases)
+            if technician and (task.technician_id != technician.id or not task.city):
+                task.technician_id = technician.id
+                task.technician_name = technician.full_name
+                if not task.city:
+                    task.city = technician.city
+                tasks_repaired += 1
 
         # =====================================================
         # 3. Commit واحد لكل المستخدمين
@@ -133,6 +144,7 @@ def seed_users() -> None:
             "Technicians already present: %d",
             technicians_existing,
         )
+        logger.info("Existing tasks repaired with technician/city data: %d", tasks_repaired)
 
     except Exception:
         db.rollback()

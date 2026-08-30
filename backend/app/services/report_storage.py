@@ -35,9 +35,14 @@ async def save_report_image(technician_id: int, report_date: str, file: UploadFi
     digest = hashlib.sha256(content).hexdigest()[:16]
     key = f"daily-reports/{technician_id}/{report_date}-{digest}-{uuid4().hex[:8]}.{extension}"
     if settings.uses_supabase_storage:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(_storage_url(key), content=content, headers={**_storage_headers(mime), "x-upsert": "true"})
-        response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(_storage_url(key), content=content, headers={**_storage_headers(mime), "x-upsert": "true"})
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ValueError(f"تعذر حفظ الصورة في التخزين السحابي (HTTP {exc.response.status_code}). تأكد من اسم bucket وصلاحيات مفتاح Supabase.") from exc
+        except httpx.RequestError as exc:
+            raise ValueError("تعذر الوصول إلى تخزين التقارير. تحقق من اتصال API بخدمة Supabase.") from exc
     else:
         path = Path(settings.uploads_dir) / key
         path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
