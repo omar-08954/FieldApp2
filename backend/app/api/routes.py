@@ -473,7 +473,9 @@ def daily_reports(db: Db, user: CurrentUser, technician_id: int | None = None):
     statement = select(DailyReport).order_by(DailyReport.report_date.desc())
     if user.role == Role.TECHNICIAN: statement = statement.where(DailyReport.technician_id == user.id)
     elif technician_id: statement = statement.where(DailyReport.technician_id == technician_id)
-    return db.scalars(statement).all()
+    reports = db.scalars(statement).all()
+    names = {row.id: row.full_name for row in db.scalars(select(User).where(User.id.in_({report.technician_id for report in reports}))).all()}
+    return [{"id": report.id, "technician_id": report.technician_id, "technician_name": names.get(report.technician_id, "غير مسجل"), "report_date": report.report_date, "image_mime": report.image_mime, "created_at": report.created_at} for report in reports]
 
 
 @router.get("/daily-reports/{report_id}/image")

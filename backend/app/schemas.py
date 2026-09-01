@@ -117,6 +117,7 @@ class DailyReportPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     technician_id: int
+    technician_name: str
     report_date: date
     image_mime: str
     created_at: datetime

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiBase } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
-type DailyReport = { id: number; technician_id: number; report_date: string; image_mime: string; created_at: string };
+type DailyReport = { id: number; technician_id: number; technician_name: string; report_date: string; image_mime: string; created_at: string };
 export function ReportUpload() {
   const client = useQueryClient(); const { data = [] } = useQuery({ queryKey: ["daily-reports"], queryFn: () => api<DailyReport[]>("/daily-reports") });
   const [file, setFile] = useState<File>(); const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); const [busy, setBusy] = useState(""); const [result, setResult] = useState("");
