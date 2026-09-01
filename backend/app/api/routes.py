@@ -289,16 +289,27 @@ def summary(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
 
 
 @router.get("/reports/tasks", response_model=TaskReportSummary)
-def task_report(db: Db, _: User = Depends(require_roles(Role.ADMIN)), city: str = Query(..., min_length=1, max_length=120)):
-    """City-scoped report using aggregated queries and a small latest-tasks window."""
-    city = normalized_city(city)
-    statement = select(Task).where(Task.city == city)
+def task_report(db: Db, user: CurrentUser, city: str | None = Query(None, max_length=120), technician_id: int | None = None, task_type: str | None = None, task_status: str | None = None, date_from: date | None = None, date_to: date | None = None):
+    """Filtered task report. Technicians are always restricted to their own tasks."""
+    if user.role == Role.TECHNICIAN:
+        technician_id = user.id
+        city = normalized_city(user.city) if user.city else None
+    elif city:
+        city = normalized_city(city)
+    filters = []
+    if city: filters.append(Task.city == city)
+    if technician_id: filters.append(Task.technician_id == technician_id)
+    if task_type: filters.append(Task.task_type == task_type)
+    if task_status: filters.append(Task.task_status == task_status)
+    if date_from: filters.append(Task.execution_date >= date_from)
+    if date_to: filters.append(Task.execution_date <= date_to)
+    statement = select(Task).where(*filters)
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
-    completed = db.scalar(select(func.count()).select_from(Task).where(Task.city == city, Task.task_status == "مزال")) or 0
-    blocked = db.scalar(select(func.count()).select_from(Task).where(Task.city == city, Task.task_status == "عائق")) or 0
-    statuses = db.execute(select(Task.task_status.label("label"), func.count().label("value")).where(Task.city == city).group_by(Task.task_status)).mappings().all()
-    latest = db.scalars(statement.order_by(Task.execution_date.desc(), Task.id.desc()).limit(10)).all()
-    return TaskReportSummary(city=city, total_tasks=total, completed_tasks=completed, blocked_tasks=blocked, completion_rate=round(completed / total * 100, 1) if total else 0, by_status=[dict(row) for row in statuses], latest_tasks=latest)
+    completed = db.scalar(select(func.count()).select_from(Task).where(*filters, Task.task_status == "مزال")) or 0
+    blocked = db.scalar(select(func.count()).select_from(Task).where(*filters, Task.task_status == "عائق")) or 0
+    statuses = db.execute(select(Task.task_status.label("label"), func.count().label("value")).where(*filters).group_by(Task.task_status)).mappings().all()
+    latest = db.scalars(statement.order_by(Task.execution_date.desc(), Task.id.desc()).limit(500)).all()
+    return TaskReportSummary(city=city or "كل المدن", total_tasks=total, completed_tasks=completed, blocked_tasks=blocked, completion_rate=round(completed / total * 100, 1) if total else 0, by_status=[dict(row) for row in statuses], latest_tasks=latest)
 
 
 @router.get("/developer/status", response_model=DeveloperStatus)
@@ -472,6 +483,15 @@ def report_image(report_id: int, db: Db, user: CurrentUser):
     try: content = report_bytes(report.image_key)
     except FileNotFoundError: raise HTTPException(404, "ملف التقرير غير موجود")
     return Response(content=content, media_type=report.image_mime)
+
+
+@router.delete("/daily-reports/{report_id}", status_code=204)
+def delete_daily_report(report_id: int, db: Db, user: CurrentUser):
+    report = db.get(DailyReport, report_id)
+    if not report or (user.role == Role.TECHNICIAN and report.technician_id != user.id):
+        raise HTTPException(404, "التقرير غير موجود")
+    db.delete(report)
+    db.commit()
 
 
 @router.websocket("/ws/events")
