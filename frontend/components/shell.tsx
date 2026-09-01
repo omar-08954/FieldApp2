@@ -13,7 +13,7 @@ import { clearToken, token } from "@/lib/auth";
 
 const links = [
   ["لوحة التحكم", "/dashboard", LayoutDashboard, "admin"], ["لوحة المدير", "/admin", ShieldCheck, "admin"],
-  ["المهام", "/tasks", ClipboardList, "admin"], ["صفحة الفني", "/technician", Wrench, "all"],
+  ["المهام", "/tasks", ClipboardList, "admin"], ["صفحة الفني", "/technician", Wrench, "technician"],
   ["التقارير", "/reports", FileSpreadsheet, "all"], ["المستودع", "/inventory", Package, "admin"],
   ["إدارة المستخدمين", "/users", Users, "admin"], ["مركز المطور", "/developer", Code2, "admin"],
   ["مراجعة الاستيراد", "/imports", UserCog, "admin"], ["الإعدادات", "/settings", Settings, "all"],
@@ -28,6 +28,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { data: notifications = [] } = useQuery({ queryKey: ["notifications"], queryFn: () => api<{ id:number; is_read:boolean }[]>("/notifications"), enabled: Boolean(token()) });
   const { data: user, isLoading: userLoading, isError: userError, error: userQueryError } = useQuery({ queryKey: ["current-user"], queryFn: () => api<CurrentUser>("/auth/me"), enabled: Boolean(accessToken), retry: false });
   const adminOnlyPaths = ["/", "/dashboard", "/tasks", "/admin", "/inventory", "/users", "/developer", "/imports"];
+  const technicianOnlyPaths = ["/technician"];
   useEffect(() => {
     if (!accessToken) {
       router.replace("/login");
@@ -41,13 +42,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (user?.role === "technician" && adminOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
       router.replace("/technician");
     }
+    if (user?.role === "admin" && technicianOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
+      router.replace("/dashboard");
+    }
   }, [accessToken, pathname, router, user?.role, userError, userQueryError]);
   const unreadCount = notifications.filter(notification => !notification.is_read).length;
   const logout = () => { clearToken(); router.replace("/login"); };
   if (!accessToken || userLoading) return <main className="grid min-h-screen place-items-center p-6 text-sm text-slate-500">جارٍ التحقق من الجلسة…</main>;
   if (userError && !(userQueryError instanceof ApiError && userQueryError.status === 401)) return <main className="grid min-h-screen place-items-center p-6"><div className="panel max-w-md text-center"><h1 className="font-bold">الخدمة غير متاحة مؤقتًا</h1><p className="mt-2 text-sm text-slate-500">لم يتم تسجيل خروجك. أعد المحاولة بعد عودة خدمة API.</p><button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white">إعادة المحاولة</button></div></main>;
   if (!user || (user.role === "technician" && adminOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`)))) return <main className="grid min-h-screen place-items-center p-6 text-sm text-slate-500">جارٍ التحقق من الصلاحيات…</main>;
-  const visibleLinks = links.filter(([, , , access]) => access === "all" || user.role === "admin");
+  const visibleLinks = links.filter(([, href, , access]) => access === "all" || (access === "admin" && user.role === "admin") || (access === "technician" && user.role === "technician"));
   const sidebar = (mobile = false) => <aside className={`flex h-full flex-col border-l border-slate-200/80 bg-white/85 p-3 shadow-2xl shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/85 ${collapsed && !mobile ? "w-[76px]" : "w-64"}`}>
     <div className="mb-6 flex items-center justify-between px-1"><Link href="/" className="flex items-center gap-2 overflow-hidden font-bold"><img src="/logo.png" alt="شعار شركة الفكر الصاعد" className="size-9 shrink-0 rounded-xl bg-white object-contain shadow-lg shadow-indigo-500/20" />{(!collapsed || mobile) && <span>FieldApp</span>}</Link>{!mobile && <button onClick={() => setCollapsed(!collapsed)} className="hidden rounded-lg p-2 hover:bg-slate-100 md:block dark:hover:bg-slate-800" aria-label="طي الشريط"><ChevronLeft className={collapsed ? "rotate-180" : ""} size={18}/></button>}<button onClick={() => setMobileOpen(false)} className="rounded-lg p-2 lg:hidden" aria-label="إغلاق القائمة"><X size={18}/></button></div>
     {user && (!collapsed || mobile) && <div className="mb-4 rounded-xl bg-brand/5 px-3 py-2 text-xs"><p className="font-semibold text-slate-700 dark:text-slate-200">{user.full_name}</p><p className="mt-0.5 text-slate-500">{user.role === "technician" ? "فني" : "مدير النظام"}</p></div>}
