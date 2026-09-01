@@ -1,5 +1,5 @@
 from typing import Generic, TypeVar
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 from app.models import Task, User
 
@@ -20,11 +20,32 @@ class UserRepository(Repository[User]):
 
 class TaskRepository(Repository[Task]):
     def __init__(self, db: Session): super().__init__(db, Task)
-    def list(self, page: int, page_size: int, search: str | None = None, status: str | None = None) -> tuple[list[Task], int]:
+    def list(self, page: int, page_size: int, search: str | None = None, status: str | None = None, search_field: str = "all") -> tuple[list[Task], int]:
         statement: Select = select(Task)
         if search:
-            value = f"%{search.strip()}%"
-            statement = statement.where(Task.task_number.ilike(value) | Task.subscription_number.ilike(value) | Task.technician_name.ilike(value))
+            terms = [part for part in search.strip().split() if part]
+            field_map = {
+                "city": Task.city,
+                "technician": Task.technician_name,
+                "technician_name": Task.technician_name,
+                "task": Task.task_number,
+                "task_number": Task.task_number,
+                "status": Task.task_status,
+                "task_status": Task.task_status,
+                "task_type": Task.task_type,
+                "subscription_number": Task.subscription_number,
+            }
+            if search_field in field_map:
+                column = field_map[search_field]
+                statement = statement.where(and_(*[column.ilike(f"%{term}%") for term in terms]))
+            else:
+                technician_match = and_(*[Task.technician_name.ilike(f"%{term}%") for term in terms])
+                other_matches = or_(*[
+                    column.ilike(f"%{term}%")
+                    for term in terms
+                    for column in (Task.task_number, Task.subscription_number, Task.city, Task.task_status, Task.task_type)
+                ])
+                statement = statement.where(or_(technician_match, other_matches))
         if status: statement = statement.where(Task.task_status == status)
         total = self.db.scalar(select(func.count()).select_from(statement.subquery())) or 0
         return list(self.db.scalars(statement.order_by(Task.created_at.desc()).offset((page - 1) * page_size).limit(page_size))), total

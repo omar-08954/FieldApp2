@@ -71,14 +71,20 @@ def change_password(payload: PasswordChange, user: CurrentUser, db: Db):
 
 
 @router.get("/tasks", response_model=Page[TaskPublic])
-def tasks(db: Db, _: User = Depends(require_roles(Role.ADMIN)), page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), search: str | None = None, status: str | None = None):
-    items, total = TaskRepository(db).list(page, page_size, search, status)
+def tasks(db: Db, _: User = Depends(require_roles(Role.ADMIN)), page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), search: str | None = None, status: str | None = None, search_field: str = Query("all")):
+    items, total = TaskRepository(db).list(page, page_size, search, status, search_field)
     return Page(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post("/tasks", response_model=TaskPublic, status_code=201)
 async def create_task(payload: TaskCreate, db: Db, user: CurrentUser):
-    task = Task(**payload.model_dump(exclude_none=True)); db.add(task); db.commit(); db.refresh(task)
+    task_number = payload.task_number.strip()
+    if db.scalar(select(Task).where(Task.task_number == task_number)):
+        raise HTTPException(409, "رقم المهمة موجود بالفعل ولا يمكن تكراره")
+    values = payload.model_dump(exclude_none=True)
+    values.update(technician_id=user.id, technician_name=user.full_name, city=normalized_city(user.city or values.get("city") or ""))
+    values["task_number"] = task_number
+    task = Task(**values); db.add(task); db.commit(); db.refresh(task)
     notify_roles(db, (Role.ADMIN,), "task_created", "مهمة جديدة", f"تمت إضافة المهمة {task.task_number}"); db.commit()
     await broker.publish("task.created", {"id": task.id, "actor": user.full_name})
     return task

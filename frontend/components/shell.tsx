@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Bot, ChevronLeft, ClipboardList, Code2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, Moon, Package, Settings, ShieldCheck, Sun, UserCog, Users, Wrench, X } from "lucide-react";
+import { Bell, Bot, ChevronLeft, ClipboardList, Code2, LayoutDashboard, LogOut, Menu, Moon, Package, Settings, ShieldCheck, Sun, UserCog, Users, Wrench, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -14,7 +14,7 @@ import { clearToken, token } from "@/lib/auth";
 const links = [
   ["لوحة التحكم", "/dashboard", LayoutDashboard, "admin"], ["لوحة المدير", "/admin", ShieldCheck, "admin"],
   ["المهام", "/tasks", ClipboardList, "admin"], ["صفحة الفني", "/technician", Wrench, "all"],
-  ["التقارير", "/reports", FileSpreadsheet, "admin"], ["المستودع", "/inventory", Package, "admin"],
+  ["المستودع", "/inventory", Package, "admin"],
   ["إدارة المستخدمين", "/users", Users, "admin"], ["مركز المطور", "/developer", Code2, "admin"],
   ["مراجعة الاستيراد", "/imports", UserCog, "admin"], ["الإعدادات", "/settings", Settings, "all"],
 ] as const;
