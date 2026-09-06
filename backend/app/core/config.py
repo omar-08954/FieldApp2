@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_role_key: str = ""
     supabase_reports_bucket: str = "fieldapp-reports"
+    whatsapp_worker_secret: str = ""
 
     @field_validator("database_url", mode="before")
     @classmethod

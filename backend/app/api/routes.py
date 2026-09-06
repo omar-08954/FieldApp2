@@ -1,7 +1,8 @@
 import json
 import logging
+import hmac
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, WebSocket
 from fastapi.responses import Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -310,6 +311,22 @@ def task_report(db: Db, user: CurrentUser, city: str | None = Query(None, max_le
     statuses = db.execute(select(Task.task_status.label("label"), func.count().label("value")).where(*filters).group_by(Task.task_status)).mappings().all()
     latest = db.scalars(statement.order_by(Task.execution_date.desc(), Task.id.desc()).limit(500)).all()
     return TaskReportSummary(city=city or "كل المدن", total_tasks=total, completed_tasks=completed, blocked_tasks=blocked, completion_rate=round(completed / total * 100, 1) if total else 0, by_status=[dict(row) for row in statuses], latest_tasks=latest)
+
+
+@router.get("/internal/whatsapp-report")
+def whatsapp_report(db: Db, period: str = Query("daily"), x_whatsapp_worker_secret: str | None = Header(None)):
+    """Provide report data only to the separately deployed WhatsApp worker."""
+    expected = settings.whatsapp_worker_secret
+    if not expected or not x_whatsapp_worker_secret or not hmac.compare_digest(x_whatsapp_worker_secret, expected):
+        raise HTTPException(403, "غير مصرح")
+    today = date.today()
+    if period == "daily": start = end = today
+    elif period == "weekly": start, end = today - timedelta(days=today.weekday()), today
+    elif period == "monthly": start, end = today.replace(day=1), today
+    elif period == "yearly": start, end = today.replace(month=1, day=1), today
+    else: raise HTTPException(422, "نوع التقرير غير صحيح")
+    tasks = db.scalars(select(Task).where(Task.execution_date >= start, Task.execution_date <= end).order_by(Task.execution_date, Task.id)).all()
+    return {"period": period, "date_from": start, "date_to": end, "tasks": [{"task_number": task.task_number, "technician_name": task.technician_name, "task_type": task.task_type, "task_status": task.task_status, "city": task.city, "execution_date": task.execution_date} for task in tasks]}
 
 
 @router.get("/developer/status", response_model=DeveloperStatus)

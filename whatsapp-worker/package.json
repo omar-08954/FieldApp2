@@ -1,0 +1,12 @@
+{
+  "name": "fieldapp-whatsapp-worker",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node src/index.mjs" },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "node-cron": "^3.0.3",
+    "pino": "^9.4.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
