@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Assistant } from "./assistant";
 import { ApiError, api } from "@/lib/api";
-import { clearToken, token } from "@/lib/auth";
+import { clearToken, currentUser, token } from "@/lib/auth";
 
 const links = [
   ["لوحة التحكم", "/dashboard", LayoutDashboard, "admin"], ["لوحة المدير", "/admin", ShieldCheck, "admin"],
@@ -26,7 +26,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [reportsAreNew] = useState(() => Date.now() < Date.UTC(2026, 8, 4));
   const accessToken = token();
   const { data: notifications = [] } = useQuery({ queryKey: ["notifications"], queryFn: () => api<{ id:number; is_read:boolean }[]>("/notifications"), enabled: Boolean(token()) });
-  const { data: user, isLoading: userLoading, isError: userError, error: userQueryError } = useQuery({ queryKey: ["current-user"], queryFn: () => api<CurrentUser>("/auth/me"), enabled: Boolean(accessToken), retry: false });
+  const { data: user, isLoading: userLoading, isError: userError, error: userQueryError } = useQuery({ queryKey: ["current-user"], queryFn: () => api<CurrentUser>("/auth/me"), initialData: currentUser() ?? undefined, staleTime: 60_000, enabled: Boolean(accessToken), retry: false });
   const adminOnlyPaths = ["/", "/dashboard", "/tasks", "/admin", "/inventory", "/users", "/developer", "/imports"];
   const technicianOnlyPaths = ["/technician"];
   useEffect(() => {
