@@ -1,4 +1,5 @@
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
+import { createServer } from "node:http";
 import cron from "node-cron";
 import pino from "pino";
 import qrcode from "qrcode-terminal";
@@ -10,6 +11,9 @@ const timezone = process.env.WHATSAPP_TIMEZONE || "Asia/Riyadh";
 const authDir = process.env.WHATSAPP_AUTH_DIR || "./auth";
 let socket;
 const jidFor = value => value.includes("@") ? value : `${value.replace(/\D/g, "")}@s.whatsapp.net`;
+
+// Render Web Services require a listening port. Background-worker deployments can omit PORT.
+if (process.env.PORT) createServer((request, response) => { response.writeHead(request.url === "/health" ? 200 : 404, { "Content-Type": "text/plain" }); response.end(request.url === "/health" ? "ok" : "not found"); }).listen(Number(process.env.PORT), "0.0.0.0", () => console.log(`Health server listening on ${process.env.PORT}`));
 
 if (!apiUrl || !secret || !recipients.length) throw new Error("FIELDAPP_API_URL و WHATSAPP_WORKER_SECRET و WHATSAPP_REPORT_RECIPIENTS مطلوبة");
 
