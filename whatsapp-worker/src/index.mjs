@@ -9,6 +9,7 @@ const recipients = (process.env.WHATSAPP_REPORT_RECIPIENTS || "").split(",").map
 const timezone = process.env.WHATSAPP_TIMEZONE || "Asia/Riyadh";
 const authDir = process.env.WHATSAPP_AUTH_DIR || "./auth";
 let socket;
+const jidFor = value => value.includes("@") ? value : `${value.replace(/\D/g, "")}@s.whatsapp.net`;
 
 if (!apiUrl || !secret || !recipients.length) throw new Error("FIELDAPP_API_URL و WHATSAPP_WORKER_SECRET و WHATSAPP_REPORT_RECIPIENTS مطلوبة");
 
@@ -18,7 +19,13 @@ async function connect() {
   socket.ev.on("creds.update", saveCreds);
   socket.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
     if (qr) qrcode.generate(qr, { small: true });
-    if (connection === "open") console.log("WhatsApp worker connected");
+    if (connection === "open") {
+      console.log("WhatsApp worker connected");
+      socket.groupFetchAllParticipating().then(groups => {
+        console.log("Available WhatsApp groups:");
+        for (const group of Object.values(groups)) console.log(`${group.subject}: ${group.id}`);
+      }).catch(error => console.error("تعذر قراءة المجموعات", error));
+    }
     if (connection === "close") {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code !== DisconnectReason.loggedOut) setTimeout(connect, 5000);
@@ -43,7 +50,7 @@ function formatReport(report) {
 async function sendReport(period) {
   if (!socket?.user) return console.warn("WhatsApp غير متصل؛ تم تجاوز التقرير", period);
   const message = formatReport(await getReport(period));
-  for (const recipient of recipients) await socket.sendMessage(`${recipient.replace(/\D/g, "")}@s.whatsapp.net`, { text: message });
+  for (const recipient of recipients) await socket.sendMessage(jidFor(recipient), { text: message });
   console.log(`Sent ${period} report to ${recipients.length} recipient(s)`);
 }
 
