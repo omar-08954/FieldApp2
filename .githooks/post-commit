@@ -1,0 +1,16 @@
+#!/bin/sh
+
+# Push every successful local commit to its configured upstream branch.
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+if [ -z "$branch" ]; then
+  echo "[post-commit] Detached HEAD; skipping push." >&2
+  exit 0
+fi
+
+echo "[post-commit] Pushing $branch..."
+if git push; then
+  echo "[post-commit] Push completed."
+else
+  echo "[post-commit] Push failed. The commit is still saved locally; run git push manually." >&2
+  exit 1
+fi
