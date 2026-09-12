@@ -65,6 +65,8 @@ class AssignedTask(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     assigned_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completion_latitude: Mapped[float | None] = mapped_column(nullable=True)
+    completion_longitude: Mapped[float | None] = mapped_column(nullable=True)
     assigned_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -135,3 +137,14 @@ class Notification(Base):
     message: Mapped[str] = mapped_column(Text)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    entity_type: Mapped[str] = mapped_column(String(80), index=True)
+    entity_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    details: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

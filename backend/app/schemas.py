@@ -110,7 +110,14 @@ class AssignmentPublic(AssignmentCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     completed_at: datetime | None
+    completion_latitude: float | None
+    completion_longitude: float | None
     created_at: datetime
+
+
+class AssignmentComplete(BaseModel):
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
 
 class DailyReportPublic(BaseModel):

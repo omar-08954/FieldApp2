@@ -9,9 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
-from app.models import AssignedTask, DailyReport, ImportReview, Material, Notification, Role, Task, TechnicianAlias, User
+from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, Notification, Role, Task, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import report_bytes, save_report_image
@@ -39,6 +39,10 @@ def remember_technician_alias(db, alias_name: str | None, technician: User) -> N
 
 def pair(user: User) -> TokenPair:
     return TokenPair(access_token=create_token(user.username, "access", timedelta(minutes=settings.access_token_expire_minutes)), refresh_token=create_token(user.username, "refresh", timedelta(days=settings.refresh_token_expire_days)), user=user)
+
+
+def audit(db, user: User, action: str, entity_type: str, entity_id: int | None, details: str = "") -> None:
+    db.add(AuditLog(actor_id=user.id, action=action, entity_type=entity_type, entity_id=entity_id, details=details[:4000]))
 
 
 @router.post("/auth/login", response_model=TokenPair)
@@ -85,7 +89,7 @@ async def create_task(payload: TaskCreate, db: Db, user: CurrentUser):
     values = payload.model_dump(exclude_none=True)
     values.update(technician_id=user.id, technician_name=user.full_name, city=normalized_city(user.city or values.get("city") or ""))
     values["task_number"] = task_number
-    task = Task(**values); db.add(task); db.commit(); db.refresh(task)
+    task = Task(**values); db.add(task); db.flush(); audit(db, user, "create", "task", task.id, f"task_number={task.task_number}"); db.commit(); db.refresh(task)
     notify_roles(db, (Role.ADMIN,), "task_created", "مهمة جديدة", f"تمت إضافة المهمة {task.task_number}"); db.commit()
     await broker.publish("task.created", {"id": task.id, "actor": user.full_name})
     return task
@@ -99,6 +103,8 @@ async def update_task(task_id: int, payload: TaskUpdate, db: Db, user: User = De
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(task, field, value)
     db.commit()
+    audit(db, user, "update", "task", task.id, "task updated")
+    db.commit()
     db.refresh(task)
     notify_roles(db, (Role.ADMIN,), "task_updated", "تم تعديل مهمة", f"تم تعديل المهمة {task.task_number}")
     db.commit()
@@ -107,27 +113,30 @@ async def update_task(task_id: int, payload: TaskUpdate, db: Db, user: User = De
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
-async def delete_task(task_id: int, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+async def delete_task(task_id: int, db: Db, user: User = Depends(require_roles(Role.ADMIN))):
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "المهمة غير موجودة")
     db.delete(task)
+    audit(db, user, "delete", "task", task_id, "task deleted")
     db.commit()
 
 
 @router.delete("/tasks", status_code=204)
-def delete_tasks(db: Db, task_ids: list[int] = Query(default=[]), delete_all: bool = Query(False), _: User = Depends(require_roles(Role.ADMIN))):
+def delete_tasks(db: Db, task_ids: list[int] = Query(default=[]), delete_all: bool = Query(False), actor: User = Depends(require_roles(Role.ADMIN))):
+    deleted = 0
     if delete_all:
-        db.execute(delete(Task))
+        deleted = db.query(Task).delete(synchronize_session=False)
     elif task_ids:
-        db.execute(delete(Task).where(Task.id.in_(task_ids)))
+        deleted = db.query(Task).filter(Task.id.in_(task_ids)).delete(synchronize_session=False)
     else:
         raise HTTPException(422, "اختر مهمة واحدة على الأقل للحذف")
+    audit(db, actor, "delete", "tasks", None, f"deleted={deleted}")
     db.commit()
 
 
 @router.post("/imports/excel", response_model=ImportResult)
-async def excel_import(db: Db, user: CurrentUser, file: UploadFile = File(...)):
+async def excel_import(db: Db, user: User = Depends(require_roles(Role.ADMIN)), file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")): raise HTTPException(422, "يرجى رفع ملف Excel بصيغة xlsx أو xlsm")
     if file.size is not None and file.size > settings.max_upload_bytes:
         raise HTTPException(413, "حجم ملف Excel يتجاوز الحد المسموح")
@@ -135,6 +144,7 @@ async def excel_import(db: Db, user: CurrentUser, file: UploadFile = File(...)):
     if len(contents) > settings.max_upload_bytes:
         raise HTTPException(413, "حجم ملف Excel يتجاوز الحد المسموح")
     batch = import_workbook(db, contents, file.filename, user.id)
+    audit(db, user, "import", "workbook", batch.id, f"filename={file.filename}; imported={batch.imported_rows}; review={batch.review_rows}; skipped={batch.skipped_rows}")
     notify_roles(db, (Role.ADMIN,), "import_completed", "اكتمل استيراد Excel", f"تم استيراد {batch.imported_rows} صف ومراجعة {batch.review_rows} صف وتجاهل {batch.skipped_rows} صف."); db.commit()
     await broker.publish("import.completed", {"batch_id": batch.id, "imported": batch.imported_rows, "review": batch.review_rows, "skipped": batch.skipped_rows})
     return ImportResult(batch_id=batch.id, total_rows=batch.total_rows, imported_rows=batch.imported_rows, review_rows=batch.review_rows, skipped_rows=batch.skipped_rows)
@@ -150,7 +160,7 @@ def import_reviews(db: Db, _: User = Depends(require_roles(Role.ADMIN)), page: i
 
 
 @router.patch("/import-reviews/{review_id}", response_model=ImportReviewPublic)
-def repair_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+def repair_import_review(review_id: int, payload: ImportReviewRepair, db: Db, actor: User = Depends(require_roles(Role.ADMIN))):
     """Store an operator correction. IDs are intentionally absent from this payload."""
     review = db.get(ImportReview, review_id)
     if not review: raise HTTPException(404, "سجل المراجعة غير موجود")
@@ -160,12 +170,13 @@ def repair_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _:
         if field in changes:
             setattr(review, field, changes[field])
     review.action_taken = "corrected_by_operator"
+    audit(db, actor, "repair", "import_review", review.id, ",".join(changes.keys()))
     db.commit(); db.refresh(review)
     return review
 
 
 @router.post("/import-reviews/bulk-technician")
-def bulk_repair_technician(payload: ImportBulkTechnicianRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+def bulk_repair_technician(payload: ImportBulkTechnicianRepair, db: Db, actor: User = Depends(require_roles(Role.ADMIN))):
     """Correct all pending rows for one spelling and optionally reinsert them."""
     technicians = list(db.scalars(select(User).where(User.is_active.is_(True))).all())
     target = match_technician(payload.target_name, technicians)
@@ -195,12 +206,13 @@ def bulk_repair_technician(payload: ImportBulkTechnicianRepair, db: Db, _: User 
             review.status = "resolved"; review.action_taken = "bulk_corrected_and_reinserted"; inserted += 1
         except Exception as exc:
             failed += 1; review.action_taken = "bulk_corrected_kept_for_review"; review.exception_type = type(exc).__name__; review.error_message = str(exc)[:4000]
+    audit(db, actor, "bulk_repair", "import_reviews", None, f"source={payload.source_name}; target={target.full_name}; corrected={corrected}; inserted={inserted}; failed={failed}")
     db.commit()
     return {"matched": len(reviews), "corrected": corrected, "inserted": inserted, "failed": failed}
 
 
 @router.post("/import-reviews/{review_id}/reinsert")
-async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db: Db, actor: User = Depends(require_roles(Role.ADMIN))):
     """Retry exactly one corrected row, safely preserving the review on failure."""
     review = db.get(ImportReview, review_id)
     if not review: raise HTTPException(404, "سجل المراجعة غير موجود")
@@ -238,6 +250,7 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
         with db.begin_nested():
             db.add(task); db.flush()
         review.status = "resolved"; review.action_taken = "reinserted_by_operator"
+        audit(db, actor, "reinsert", "import_review", review.id, f"task_id={task.id}")
         db.commit()
     except Exception as exc:
         logger = logging.getLogger(__name__)
@@ -256,10 +269,10 @@ async def reinsert_import_review(review_id: int, payload: ImportReviewRepair, db
 
 
 @router.post("/import-reviews/{review_id}/ignore")
-def ignore_import_review(review_id: int, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+def ignore_import_review(review_id: int, db: Db, actor: User = Depends(require_roles(Role.ADMIN))):
     review = db.get(ImportReview, review_id)
     if not review: raise HTTPException(404, "سجل المراجعة غير موجود")
-    review.status = "ignored"; db.commit(); return {"ok": True}
+    review.status = "ignored"; audit(db, actor, "ignore", "import_review", review.id); db.commit(); return {"ok": True}
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)
@@ -341,14 +354,36 @@ def developer_status(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     )
 
 
+@router.get("/performance/technicians")
+def technician_performance(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+    technicians = db.scalars(select(User).where(User.role == Role.TECHNICIAN).order_by(User.full_name)).all()
+    result = []
+    for technician in technicians:
+        assigned = list(db.scalars(select(AssignedTask).where(AssignedTask.technician_id == technician.id)).all())
+        completed = sum(1 for item in assigned if item.completed_at is not None)
+        tasks = list(db.scalars(select(Task).where(Task.technician_id == technician.id)).all())
+        result.append({"technician_id": technician.id, "technician_name": technician.full_name, "city": technician.city, "assigned_tasks": len(assigned), "completed_assignments": completed, "recorded_tasks": len(tasks), "blocked_tasks": sum(1 for item in tasks if item.task_status == "عائق"), "completion_rate": round(completed / len(assigned) * 100, 1) if assigned else 0})
+    return result
+
+
+@router.get("/audit-logs")
+def audit_logs(db: Db, _: User = Depends(require_roles(Role.ADMIN)), limit: int = Query(100, ge=1, le=500)):
+    rows = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)).all()
+    actor_ids = {row.actor_id for row in rows if row.actor_id is not None}
+    actors = {actor.id: actor.full_name for actor in db.scalars(select(User).where(User.id.in_(actor_ids))).all()} if actor_ids else {}
+    return [{"id": row.id, "actor_name": actors.get(row.actor_id, "النظام"), "action": row.action, "entity_type": row.entity_type, "entity_id": row.entity_id, "details": row.details, "created_at": row.created_at} for row in rows]
+
+
 @router.post("/developer/cleanup")
-def cleanup_database(payload: CleanupRequest, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+def cleanup_database(payload: CleanupRequest, db: Db, actor: User = Depends(require_roles(Role.ADMIN))):
     """Delete only the explicitly selected operational scope; users are never deleted."""
     if payload.scope == "tasks":
         deleted = db.query(Task).delete(synchronize_session=False)
+        audit(db, actor, "cleanup", "tasks", None, f"deleted={deleted}")
         db.commit()
         return {"scope": payload.scope, "deleted": deleted, "message": "تم تنظيف جدول المهام فقط. المستخدمون والتقارير لم تتأثر."}
     deleted = db.query(ImportReview).delete(synchronize_session=False)
+    audit(db, actor, "cleanup", "import_reviews", None, f"deleted={deleted}")
     db.commit()
     return {"scope": payload.scope, "deleted": deleted, "message": "تم تنظيف مراجعة الاستيراد فقط. المهام والمستخدمون لم تتأثر."}
 
@@ -365,13 +400,13 @@ def users(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
 
 
 @router.post("/users", response_model=UserPublic, status_code=201)
-async def create_user(payload: UserCreate, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+async def create_user(payload: UserCreate, db: Db, actor: User = Depends(require_roles(Role.ADMIN))):
     if UserRepository(db).by_username(payload.username): raise HTTPException(409, "اسم المستخدم مستخدم بالفعل")
     if payload.role not in {Role.ADMIN, Role.TECHNICIAN}:
         raise HTTPException(422, "الدور المحدد غير صالح")
     from app.core.security import hash_password
     user = User(username=payload.username, password_hash=hash_password(payload.password), full_name=payload.full_name, role=payload.role, city=payload.city)
-    db.add(user); db.commit(); db.refresh(user)
+    db.add(user); db.flush(); audit(db, actor, "create", "user", user.id, f"username={user.username}"); db.commit(); db.refresh(user)
     notify_roles(db, (Role.ADMIN,), "user_created", "مستخدم جديد", f"تمت إضافة المستخدم {user.full_name}")
     db.commit()
     await broker.publish("user.created", {"id": user.id})
@@ -379,7 +414,7 @@ async def create_user(payload: UserCreate, db: Db, _: User = Depends(require_rol
 
 
 @router.patch("/users/{user_id}", response_model=UserPublic)
-async def update_user(user_id: int, payload: UserUpdate, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+async def update_user(user_id: int, payload: UserUpdate, db: Db, actor: User = Depends(require_roles(Role.ADMIN))):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "المستخدم غير موجود")
@@ -387,6 +422,7 @@ async def update_user(user_id: int, payload: UserUpdate, db: Db, _: User = Depen
         raise HTTPException(422, "الدور المحدد غير صالح")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
+    audit(db, actor, "update", "user", user.id, "user updated")
     db.commit()
     db.refresh(user)
     await broker.publish("user.updated", {"id": user.id})
@@ -401,6 +437,7 @@ async def deactivate_user(user_id: int, db: Db, actor: User = Depends(require_ro
     if user.id == actor.id:
         raise HTTPException(422, "لا يمكن تعطيل حسابك الحالي")
     user.is_active = False
+    audit(db, actor, "deactivate", "user", user.id, "user deactivated")
     db.commit()
     await broker.publish("user.deactivated", {"id": user.id})
 
@@ -440,19 +477,23 @@ def assignments(db: Db, user: CurrentUser, technician_id: int | None = None, com
 @router.post("/assignments", response_model=AssignmentPublic, status_code=201)
 async def assign(payload: AssignmentCreate, db: Db, user: User = Depends(require_roles(Role.ADMIN))):
     if not db.get(User, payload.technician_id): raise HTTPException(422, "الفني غير موجود")
-    assignment = AssignedTask(**payload.model_dump(exclude_none=True), assigned_by_id=user.id); db.add(assignment); db.commit(); db.refresh(assignment)
+    assignment = AssignedTask(**payload.model_dump(exclude_none=True), assigned_by_id=user.id); db.add(assignment); db.flush(); audit(db, user, "create", "assignment", assignment.id, f"task_number={assignment.task_number}"); db.commit(); db.refresh(assignment)
     db.add(Notification(user_id=assignment.technician_id, event_type="task_assigned", title="مهمة مسندة", message=f"أُسندت إليك المهمة {assignment.task_number}")); db.commit()
     await broker.publish("assignment.created", {"id": assignment.id, "technician_id": assignment.technician_id})
     return assignment
 
 
 @router.post("/assignments/{assignment_id}/complete", response_model=AssignmentPublic)
-async def complete_assignment(assignment_id: int, db: Db, user: CurrentUser):
+async def complete_assignment(assignment_id: int, db: Db, user: CurrentUser, payload: AssignmentComplete | None = None):
     assignment = db.get(AssignedTask, assignment_id)
     if not assignment: raise HTTPException(404, "المهمة المسندة غير موجودة")
     if user.role == Role.TECHNICIAN and assignment.technician_id != user.id: raise HTTPException(403, "لا تملك صلاحية هذه المهمة")
     from datetime import UTC, datetime
     assignment.completed_at = datetime.now(UTC); db.commit(); db.refresh(assignment)
+    assignment.completion_latitude = payload.latitude if payload else None
+    assignment.completion_longitude = payload.longitude if payload else None
+    audit(db, user, "complete", "assignment", assignment.id, f"coordinates={assignment.completion_latitude},{assignment.completion_longitude}")
+    db.commit()
     await broker.publish("assignment.completed", {"id": assignment.id})
     return assignment
 
@@ -509,6 +550,7 @@ def delete_daily_report(report_id: int, db: Db, user: CurrentUser):
     report = db.get(DailyReport, report_id)
     if not report or (user.role == Role.TECHNICIAN and report.technician_id != user.id):
         raise HTTPException(404, "التقرير غير موجود")
+    audit(db, user, "delete", "daily_report", report.id, f"report_date={report.report_date}")
     db.delete(report)
     db.commit()
 
