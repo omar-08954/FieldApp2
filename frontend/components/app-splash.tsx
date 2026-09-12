@@ -7,7 +7,8 @@ export function AppSplash({ children }: { children: React.ReactNode }) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setVisible(false), 2200);
+    // Keep the brand animation without adding a noticeable delay before login.
+    const timer = window.setTimeout(() => setVisible(false), 900);
     return () => window.clearTimeout(timer);
   }, []);
 
