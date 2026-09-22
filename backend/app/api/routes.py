@@ -9,12 +9,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
-from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, Notification, Role, Task, TechnicianAlias, User
+from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Notification, Role, Task, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
-from app.services.report_storage import report_bytes, save_report_image
+from app.services.report_storage import delete_report_image, report_bytes, save_report_image
 from app.services.events import broker
 from app.services.importer import DEFAULT_STATUS, DEFAULT_SUBSCRIPTION, _city, _normalized, import_workbook, match_technician
 
@@ -82,12 +82,19 @@ def tasks(db: Db, _: User = Depends(require_roles(Role.ADMIN)), page: int = Quer
 
 
 @router.post("/tasks", response_model=TaskPublic, status_code=201)
-async def create_task(payload: TaskCreate, db: Db, user: CurrentUser):
+async def create_task(payload: TaskCreate, db: Db, user: CurrentUser, idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+    if idempotency_key:
+        idempotency_key = idempotency_key.strip()
+        if len(idempotency_key) > 120:
+            raise HTTPException(422, "مفتاح العملية طويل جدًا")
+        existing = db.scalar(select(Task).where(Task.idempotency_key == idempotency_key))
+        if existing:
+            return existing
     task_number = payload.task_number.strip()
     if db.scalar(select(Task).where(Task.task_number == task_number)):
         raise HTTPException(409, "رقم المهمة موجود بالفعل ولا يمكن تكراره")
     values = payload.model_dump(exclude_none=True)
-    values.update(technician_id=user.id, technician_name=user.full_name, city=normalized_city(user.city or values.get("city") or ""))
+    values.update(technician_id=user.id, technician_name=user.full_name, city=normalized_city(user.city or values.get("city") or ""), idempotency_key=idempotency_key)
     values["task_number"] = task_number
     task = Task(**values); db.add(task); db.flush(); audit(db, user, "create", "task", task.id, f"task_number={task.task_number}"); db.commit(); db.refresh(task)
     notify_roles(db, (Role.ADMIN,), "task_created", "مهمة جديدة", f"تمت إضافة المهمة {task.task_number}"); db.commit()
@@ -100,9 +107,7 @@ async def update_task(task_id: int, payload: TaskUpdate, db: Db, user: User = De
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "المهمة غير موجودة")
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(task, field, value)
-    db.commit()
+    for field, value in payload.model_dump(exclude_unset=True).items(): setattr(task, field, value)
     audit(db, user, "update", "task", task.id, "task updated")
     db.commit()
     db.refresh(task)
@@ -357,12 +362,16 @@ def developer_status(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
 @router.get("/performance/technicians")
 def technician_performance(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     technicians = db.scalars(select(User).where(User.role == Role.TECHNICIAN).order_by(User.full_name)).all()
+    assignment_rows = db.execute(select(AssignedTask.technician_id, func.count().label("assigned"), func.count(AssignedTask.completed_at).label("completed")).group_by(AssignedTask.technician_id)).mappings().all()
+    task_rows = db.execute(select(Task.technician_id, func.count().label("recorded"), func.sum(func.cast(Task.task_status == "عائق", Integer)).label("blocked")).group_by(Task.technician_id)).mappings().all()
+    assignments = {row["technician_id"]: row for row in assignment_rows}
+    tasks = {row["technician_id"]: row for row in task_rows}
     result = []
     for technician in technicians:
-        assigned = list(db.scalars(select(AssignedTask).where(AssignedTask.technician_id == technician.id)).all())
-        completed = sum(1 for item in assigned if item.completed_at is not None)
-        tasks = list(db.scalars(select(Task).where(Task.technician_id == technician.id)).all())
-        result.append({"technician_id": technician.id, "technician_name": technician.full_name, "city": technician.city, "assigned_tasks": len(assigned), "completed_assignments": completed, "recorded_tasks": len(tasks), "blocked_tasks": sum(1 for item in tasks if item.task_status == "عائق"), "completion_rate": round(completed / len(assigned) * 100, 1) if assigned else 0})
+        assigned = int(assignments.get(technician.id, {}).get("assigned", 0) or 0)
+        completed = int(assignments.get(technician.id, {}).get("completed", 0) or 0)
+        task_row = tasks.get(technician.id, {})
+        result.append({"technician_id": technician.id, "technician_name": technician.full_name, "city": technician.city, "assigned_tasks": assigned, "completed_assignments": completed, "recorded_tasks": int(task_row.get("recorded", 0) or 0), "blocked_tasks": int(task_row.get("blocked", 0) or 0), "completion_rate": round(completed / assigned * 100, 1) if assigned else 0})
     return result
 
 
@@ -448,21 +457,36 @@ def materials(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
 
 
 @router.post("/materials", response_model=MaterialPublic, status_code=201)
-async def create_material(payload: MaterialCreate, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+async def create_material(payload: MaterialCreate, db: Db, user: User = Depends(require_roles(Role.ADMIN))):
     if db.scalar(select(Material).where(Material.name == payload.name)): raise HTTPException(409, "هذه المادة موجودة بالفعل")
-    material = Material(**payload.model_dump()); db.add(material); db.commit(); db.refresh(material)
+    material = Material(**payload.model_dump()); db.add(material); db.flush()
+    if material.quantity:
+        db.add(MaterialMovement(material_id=material.id, actor_id=user.id, quantity_delta=material.quantity, quantity_before=0, quantity_after=material.quantity, reason="رصيد افتتاحي"))
+    audit(db, user, "create", "material", material.id, f"quantity={material.quantity}")
+    db.commit(); db.refresh(material)
     await broker.publish("material.created", {"id": material.id})
     return material
 
 
 @router.patch("/materials/{material_id}/quantity", response_model=MaterialPublic)
-async def adjust_material(material_id: int, delta: int, db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+async def adjust_material(material_id: int, delta: int, db: Db, reason: str | None = Query(None, max_length=300), user: User = Depends(require_roles(Role.ADMIN))):
     material = db.get(Material, material_id)
     if not material: raise HTTPException(404, "المادة غير موجودة")
     if material.quantity + delta < 0: raise HTTPException(422, "الكمية المطلوبة أكبر من المخزون")
-    material.quantity += delta; db.commit(); db.refresh(material)
+    before = material.quantity
+    material.quantity += delta
+    db.add(MaterialMovement(material_id=material.id, actor_id=user.id, quantity_delta=delta, quantity_before=before, quantity_after=material.quantity, reason=reason))
+    audit(db, user, "adjust", "material", material.id, f"delta={delta}; reason={reason or ''}")
+    db.commit(); db.refresh(material)
     await broker.publish("material.updated", {"id": material.id, "quantity": material.quantity})
     return material
+
+
+@router.get("/materials/{material_id}/movements", response_model=list[MaterialMovementPublic])
+def material_movements(material_id: int, db: Db, _: User = Depends(require_roles(Role.ADMIN)), limit: int = Query(100, ge=1, le=500)):
+    if not db.get(Material, material_id):
+        raise HTTPException(404, "المادة غير موجودة")
+    return db.scalars(select(MaterialMovement).where(MaterialMovement.material_id == material_id).order_by(MaterialMovement.created_at.desc(), MaterialMovement.id.desc()).limit(limit)).all()
 
 
 @router.get("/assignments", response_model=list[AssignmentPublic])
@@ -489,11 +513,15 @@ async def complete_assignment(assignment_id: int, db: Db, user: CurrentUser, pay
     if not assignment: raise HTTPException(404, "المهمة المسندة غير موجودة")
     if user.role == Role.TECHNICIAN and assignment.technician_id != user.id: raise HTTPException(403, "لا تملك صلاحية هذه المهمة")
     from datetime import UTC, datetime
-    assignment.completed_at = datetime.now(UTC); db.commit(); db.refresh(assignment)
+    assignment.completed_at = datetime.now(UTC)
     assignment.completion_latitude = payload.latitude if payload else None
     assignment.completion_longitude = payload.longitude if payload else None
+    linked_task = db.scalar(select(Task).where(Task.task_number == assignment.task_number))
+    if linked_task and (user.role == Role.ADMIN or linked_task.technician_id == user.id):
+        linked_task.task_status = "مزال"
     audit(db, user, "complete", "assignment", assignment.id, f"coordinates={assignment.completion_latitude},{assignment.completion_longitude}")
     db.commit()
+    db.refresh(assignment)
     await broker.publish("assignment.completed", {"id": assignment.id})
     return assignment
 
@@ -513,15 +541,20 @@ def read_notification(notification_id: int, db: Db, user: CurrentUser):
 @router.post("/daily-reports", status_code=201)
 async def upload_daily_report(db: Db, user: CurrentUser, report_date: str, image: UploadFile = File(...)):
     from datetime import date
-    try: parsed_date = date.fromisoformat(report_date); key, mime = await save_report_image(user.id, report_date, image)
+    try:
+        parsed_date = date.fromisoformat(report_date)
+        key, mime = await save_report_image(user.id, report_date, image)
     except ValueError as exc: raise HTTPException(422, str(exc))
     except Exception as exc:
         logging.getLogger(__name__).exception("Daily report upload failed", extra={"technician_id": user.id})
         raise HTTPException(502, "تعذر حفظ التقرير في التخزين. تحقق من إعدادات Supabase Storage.") from exc
     report = db.scalar(select(DailyReport).where(DailyReport.technician_id == user.id, DailyReport.report_date == parsed_date))
+    old_key = report.image_key if report else None
     if report: report.image_key, report.image_mime = key, mime
     else: report = DailyReport(technician_id=user.id, report_date=parsed_date, image_key=key, image_mime=mime); db.add(report)
     db.commit(); db.refresh(report)
+    if old_key and old_key != key:
+        await delete_report_image(old_key)
     await broker.publish("daily_report.saved", {"id": report.id, "technician_id": user.id})
     return {"id": report.id, "report_date": report.report_date, "image_key": report.image_key}
 
@@ -546,13 +579,15 @@ def report_image(report_id: int, db: Db, user: CurrentUser):
 
 
 @router.delete("/daily-reports/{report_id}", status_code=204)
-def delete_daily_report(report_id: int, db: Db, user: CurrentUser):
+async def delete_daily_report(report_id: int, db: Db, user: CurrentUser):
     report = db.get(DailyReport, report_id)
     if not report or (user.role == Role.TECHNICIAN and report.technician_id != user.id):
         raise HTTPException(404, "التقرير غير موجود")
     audit(db, user, "delete", "daily_report", report.id, f"report_date={report.report_date}")
+    image_key = report.image_key
     db.delete(report)
     db.commit()
+    await delete_report_image(image_key)
 
 
 @router.websocket("/ws/events")

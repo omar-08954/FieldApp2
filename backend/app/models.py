@@ -42,6 +42,7 @@ class Task(Base):
     technician_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     technician_name: Mapped[str] = mapped_column(String(200), default="غير مسجل")
     task_number: Mapped[str] = mapped_column(String(120), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(120), unique=True, index=True)
     subscription_number: Mapped[str] = mapped_column(String(120), default="غير مسجل", index=True)
     task_type: Mapped[str] = mapped_column(String(80), default="تقني")
     task_status: Mapped[str] = mapped_column(String(80), default=TaskStatus.INSPECTED)
@@ -80,6 +81,18 @@ class Material(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class MaterialMovement(Base):
+    __tablename__ = "material_movements"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), index=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    quantity_delta: Mapped[int] = mapped_column(Integer)
+    quantity_before: Mapped[int] = mapped_column(Integer)
+    quantity_after: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 class DailyReport(Base):

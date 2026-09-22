@@ -95,6 +95,18 @@ class MaterialPublic(MaterialCreate):
     updated_at: datetime | None
 
 
+class MaterialMovementPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    material_id: int
+    actor_id: int | None
+    quantity_delta: int
+    quantity_before: int
+    quantity_after: int
+    reason: str | None
+    created_at: datetime
+
+
 class AssignmentCreate(BaseModel):
     technician_id: int
     task_number: str = Field(min_length=1, max_length=120)

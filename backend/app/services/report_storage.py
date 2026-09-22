@@ -48,6 +48,22 @@ async def save_report_image(technician_id: int, report_date: str, file: UploadFi
         path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
     return key, mime
 
+
+async def delete_report_image(key: str) -> None:
+    """Best-effort cleanup for an image replaced or deleted by an operator."""
+    if settings.uses_supabase_storage:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.delete(_storage_url(key), headers=_storage_headers())
+            response.raise_for_status()
+        except Exception:
+            return
+        return
+    try:
+        report_path(key).unlink(missing_ok=True)
+    except OSError:
+        return
+
 def report_path(key: str) -> Path:
     candidate = (Path(settings.uploads_dir) / key).resolve()
     root = Path(settings.uploads_dir).resolve()

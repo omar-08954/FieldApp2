@@ -5,6 +5,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 
 type Material = { id: number; name: string; quantity: number; unit: string; notes?: string };
+type Movement = { id: number; quantity_delta: number; quantity_before: number; quantity_after: number; reason?: string; created_at: string };
 
 export function MaterialsManagerPanel({ mode }: { mode: "create" | "list" | "manage" }) {
   const client = useQueryClient();
@@ -28,7 +29,8 @@ export function MaterialsManagerPanel({ mode }: { mode: "create" | "list" | "man
 
   async function changeQuantity(id: number, delta: number) {
     try {
-      await api(`/materials/${id}/quantity?delta=${delta}`, { method: "PATCH" });
+      const reason = window.prompt("سبب حركة المخزون (اختياري):") || "";
+      await api(`/materials/${id}/quantity?delta=${delta}&reason=${encodeURIComponent(reason)}`, { method: "PATCH" });
       refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تعديل الكمية.");
@@ -53,7 +55,13 @@ export function MaterialsManagerPanel({ mode }: { mode: "create" | "list" | "man
       {message && <p className="mb-3 rounded-lg bg-slate-100 p-3 text-sm dark:bg-slate-800">{message}</p>}
       {isLoading && <p className="py-5 text-sm text-slate-500">جارٍ تحميل المواد…</p>}
       {isError && <p className="py-5 text-sm text-red-600">تعذر تحميل المواد. تأكد من اتصال API وصلاحيات المدير.</p>}
-      {!isLoading && !isError && <table className="w-full text-right text-sm"><thead><tr className="text-slate-500"><th>المادة</th><th>الكمية</th><th>الوحدة</th>{mode === "manage" && <th>الإجراء</th>}</tr></thead><tbody>{data.map(item => <tr className="border-t" key={item.id}><td className="py-3">{item.name}</td><td>{item.quantity}</td><td>{item.unit}</td>{mode === "manage" && <td className="space-x-2 space-x-reverse"><button type="button" onClick={() => changeQuantity(item.id, 1)} className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">+1</button><button type="button" onClick={() => changeQuantity(item.id, -1)} className="rounded bg-red-100 px-2 py-1 text-red-700">-1</button></td>}</tr>)}</tbody></table>}
+      {!isLoading && !isError && <table className="w-full text-right text-sm"><thead><tr className="text-slate-500"><th>المادة</th><th>الكمية</th><th>الوحدة</th>{mode === "manage" && <th>الإجراء</th>}</tr></thead><tbody>{data.map(item => <tr className="border-t" key={item.id}><td className="py-3">{item.name}</td><td>{item.quantity}</td><td>{item.unit}</td>{mode === "manage" && <td className="space-x-2 space-x-reverse"><button type="button" onClick={() => changeQuantity(item.id, 1)} className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">+1</button><button type="button" onClick={() => changeQuantity(item.id, -1)} className="rounded bg-red-100 px-2 py-1 text-red-700">-1</button><MovementHistory materialId={item.id}/></td>}</tr>)}</tbody></table>}
     </div>}
   </div>;
+}
+
+function MovementHistory({ materialId }: { materialId: number }) {
+  const [open, setOpen] = useState(false);
+  const { data = [] } = useQuery({ queryKey: ["material-movements", materialId], queryFn: () => api<Movement[]>(`/materials/${materialId}/movements`), enabled: open });
+  return <><button type="button" onClick={() => setOpen(value => !value)} className="mr-2 rounded border px-2 py-1 text-xs">السجل</button>{open && <div className="absolute z-10 mt-2 max-w-xs rounded-xl border bg-white p-3 text-xs shadow-xl dark:bg-slate-900">{data.length ? data.slice(0, 10).map(row => <p key={row.id} className="border-b py-1 last:border-0">{row.quantity_delta > 0 ? "+" : ""}{row.quantity_delta} — {row.reason || "بدون سبب"}</p>) : <p>لا توجد حركات.</p>}</div>}</>;
 }
