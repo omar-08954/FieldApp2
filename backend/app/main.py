@@ -176,6 +176,11 @@ async def unhandled_exception_handler(
 # Health check
 # ============================================================
 
+@app.get("/")
+def root():
+    return {"service": "FieldApp API", "status": "ok", "health": "/health", "api": "/api/v1"}
+
+
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
     try:
