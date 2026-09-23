@@ -107,7 +107,13 @@ async def update_task(task_id: int, payload: TaskUpdate, db: Db, user: User = De
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "المهمة غير موجودة")
-    for field, value in payload.model_dump(exclude_unset=True).items(): setattr(task, field, value)
+    values = payload.model_dump(exclude_unset=True)
+    if "task_number" in values:
+        values["task_number"] = values["task_number"].strip()
+        duplicate = db.scalar(select(Task).where(Task.task_number == values["task_number"], Task.id != task_id))
+        if duplicate:
+            raise HTTPException(409, "رقم المهمة موجود بالفعل ولا يمكن تكراره")
+    for field, value in values.items(): setattr(task, field, value)
     audit(db, user, "update", "task", task.id, "task updated")
     db.commit()
     db.refresh(task)
