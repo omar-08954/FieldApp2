@@ -185,7 +185,13 @@ def root():
 def health(db: Session = Depends(get_db)):
     try:
         db.execute(select(1))
-        return {"status": "ok", "database": "ok"}
+        return {
+            "service": settings.app_name,
+            "version": "1.0.0",
+            "status": "ok",
+            "database": "ok",
+            "environment": settings.environment,
+        }
     except SQLAlchemyError as exc:
         logger.exception("Health check database connection failed")
         raise HTTPException(status_code=503, detail="قاعدة البيانات غير متاحة حالياً") from exc

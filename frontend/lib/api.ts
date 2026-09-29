@@ -17,6 +17,7 @@ export class ApiError extends Error {
 }
 
 export const apiBase = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
+export const apiRoot = apiBase.replace(/\/api\/v1$/, "");
 export type Summary = { total_tasks: number; completion_rate: number; delayed_tasks: number; needs_review: number; by_status: { label: string; value: number }[]; daily_trend: { label: string; value: number }[]; latest_tasks: { id:number; task_number:string; technician_name:string; task_status:string; execution_date:string }[]; top_technicians: { label:string; value:number }[] };
 type ApiErrorPayload = { detail?: string };
 
