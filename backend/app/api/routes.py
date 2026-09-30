@@ -9,9 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
-from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TechnicianAlias, User
+from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TaskMaterialUsage, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, PublicCustomerFeedback, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, PublicCustomerFeedback, RefreshRequest, TaskCreate, TaskMaterialUsageCreate, TaskMaterialUsagePublic, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import delete_report_image, report_bytes, save_report_image
@@ -493,6 +493,28 @@ def material_movements(material_id: int, db: Db, _: User = Depends(require_roles
     if not db.get(Material, material_id):
         raise HTTPException(404, "المادة غير موجودة")
     return db.scalars(select(MaterialMovement).where(MaterialMovement.material_id == material_id).order_by(MaterialMovement.created_at.desc(), MaterialMovement.id.desc()).limit(limit)).all()
+
+
+@router.get("/tasks/{task_id}/materials", response_model=list[TaskMaterialUsagePublic])
+def task_materials(task_id: int, db: Db, user: CurrentUser):
+    task = db.get(Task, task_id)
+    if not task or (user.role == Role.TECHNICIAN and task.technician_id != user.id):
+        raise HTTPException(404, "المهمة غير موجودة")
+    return db.scalars(select(TaskMaterialUsage).where(TaskMaterialUsage.task_id == task_id).order_by(TaskMaterialUsage.created_at.desc())).all()
+
+
+@router.post("/tasks/{task_id}/materials", response_model=TaskMaterialUsagePublic, status_code=201)
+def use_task_material(task_id: int, payload: TaskMaterialUsageCreate, db: Db, user: CurrentUser):
+    task = db.get(Task, task_id); material = db.get(Material, payload.material_id)
+    if not task or not material or (user.role == Role.TECHNICIAN and task.technician_id != user.id):
+        raise HTTPException(404, "المهمة أو المادة غير موجودة")
+    if material.quantity < payload.quantity:
+        raise HTTPException(422, "الكمية المتاحة في المخزون غير كافية")
+    before = material.quantity; material.quantity -= payload.quantity
+    usage = TaskMaterialUsage(task_id=task_id, material_id=material.id, quantity=payload.quantity, actor_id=user.id); db.add(usage)
+    db.add(MaterialMovement(material_id=material.id, actor_id=user.id, quantity_delta=-payload.quantity, quantity_before=before, quantity_after=material.quantity, reason=f"استخدام في المهمة {task.task_number}"))
+    db.commit(); db.refresh(usage)
+    return usage
 
 
 @router.get("/assignments", response_model=list[AssignmentPublic])

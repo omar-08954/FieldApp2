@@ -123,6 +123,21 @@ class MaterialMovementPublic(BaseModel):
     created_at: datetime
 
 
+class TaskMaterialUsageCreate(BaseModel):
+    material_id: int
+    quantity: int = Field(gt=0)
+
+
+class TaskMaterialUsagePublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    task_id: int
+    material_id: int
+    quantity: int
+    actor_id: int | None
+    created_at: datetime
+
+
 class AssignmentCreate(BaseModel):
     technician_id: int
     task_number: str = Field(min_length=1, max_length=120)
