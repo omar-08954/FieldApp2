@@ -1,9 +1,9 @@
 import { api } from "./api";
 
 const taskKey = "fieldapp.pending_tasks";
-type PendingTask = { id: string; payload: Record<string, string> };
+type PendingTask = { id: string; payload: Record<string, unknown> };
 const readTasks = (): PendingTask[] => { try { return JSON.parse(localStorage.getItem(taskKey) || "[]") as PendingTask[]; } catch { return []; } };
-export function queueTask(payload: Record<string, string>, id = crypto.randomUUID()) { const tasks = readTasks(); tasks.push({ id, payload }); localStorage.setItem(taskKey, JSON.stringify(tasks)); }
+export function queueTask(payload: Record<string, unknown>, id = crypto.randomUUID()) { const tasks = readTasks(); if (!tasks.some(task => task.id === id)) tasks.push({ id, payload }); localStorage.setItem(taskKey, JSON.stringify(tasks)); }
 export async function flushOfflineTasks() { const tasks = readTasks(); const remaining: PendingTask[] = []; for (const task of tasks) { try { await api("/tasks", { method: "POST", headers: { "Idempotency-Key": task.id }, body: JSON.stringify(task.payload) }); } catch (error) { if (error instanceof Error && "status" in error && [400, 401, 403, 422].includes(Number((error as { status?: number }).status))) continue; remaining.push(task); } } if (remaining.length) localStorage.setItem(taskKey, JSON.stringify(remaining)); else localStorage.removeItem(taskKey); }
 
 const reportDb = "fieldapp-offline-reports";

@@ -1,6 +1,7 @@
 const CACHE = "fieldapp-shell-v1";
 self.addEventListener("install", event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(["/", "/login"])).then(() => self.skipWaiting())); });
 self.addEventListener("activate", event => { event.waitUntil(self.clients.claim()); });
+self.addEventListener("sync", event => { if (event.tag === "fieldapp-sync") event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(clients => clients.forEach(client => client.postMessage({ type: "fieldapp:sync" })))); });
 self.addEventListener("fetch", event => {
   const request = event.request;
   if (request.method !== "GET" || new URL(request.url).origin !== self.location.origin || new URL(request.url).pathname.startsWith("/api/")) return;
