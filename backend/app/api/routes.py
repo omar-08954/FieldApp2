@@ -15,6 +15,7 @@ from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, 
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import delete_report_image, report_bytes, save_report_image
+from app.services.report_analysis import analyze_report
 from app.services.events import broker
 from app.services.importer import DEFAULT_STATUS, DEFAULT_SUBSCRIPTION, _city, _normalized, import_workbook, match_technician
 
@@ -778,6 +779,18 @@ def report_image(report_id: int, db: Db, user: CurrentUser):
     try: content = report_bytes(report.image_key)
     except FileNotFoundError: raise HTTPException(404, "ملف التقرير غير موجود")
     return Response(content=content, media_type=report.image_mime)
+
+
+@router.post("/daily-reports/{report_id}/analyze")
+async def analyze_daily_report(report_id: int, db: Db, user: CurrentUser):
+    report = db.get(DailyReport, report_id)
+    if not report or (user.role == Role.TECHNICIAN and report.technician_id != user.id):
+        raise HTTPException(404, "التقرير غير موجود")
+    try:
+        analysis = await analyze_report(report_bytes(report.image_key), report.image_mime)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {"report_id": report.id, "analysis": analysis}
 
 
 @router.delete("/daily-reports/{report_id}", status_code=204)
