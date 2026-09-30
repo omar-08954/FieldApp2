@@ -578,6 +578,15 @@ def operations_analytics(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     total = db.scalar(select(func.count()).select_from(Task)) or 0
     completed = db.scalar(select(func.count()).select_from(Task).where(Task.task_status == "مزال")) or 0
     overdue = db.scalar(select(func.count()).select_from(Task).where(Task.due_at.is_not(None), Task.due_at < now, Task.task_status != "مزال")) or 0
+    overdue_tasks = db.scalars(select(Task).where(Task.due_at.is_not(None), Task.due_at < now, Task.task_status != "مزال").limit(100)).all()
+    admin_ids = [row.id for row in db.scalars(select(User).where(User.role == Role.ADMIN, User.is_active.is_(True))).all()]
+    for overdue_task in overdue_tasks:
+        event_type = f"sla_overdue:{overdue_task.id}"
+        already_notified = db.scalar(select(func.count()).select_from(Notification).where(Notification.event_type == event_type)) or 0
+        if not already_notified:
+            db.add_all([Notification(user_id=admin_id, event_type=event_type, title="تجاوز SLA", message=f"المهمة {overdue_task.task_number} تجاوزت موعدها المحدد") for admin_id in admin_ids])
+    if overdue_tasks and admin_ids:
+        db.commit()
     average = db.scalar(select(func.avg(Task.customer_rating)).where(Task.customer_rating.is_not(None)))
     rows = db.execute(
         select(Task.technician_id, Task.technician_name, func.count().label("total"), func.sum(func.cast(Task.task_status == "مزال", Integer)).label("completed"))
