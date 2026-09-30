@@ -154,6 +154,11 @@ class CustomerFeedback(BaseModel):
     feedback: str | None = Field(default=None, max_length=2000)
 
 
+class PublicCustomerFeedback(CustomerFeedback):
+    task_number: str = Field(min_length=1, max_length=120)
+    customer_phone: str = Field(min_length=3, max_length=40)
+
+
 class TechnicianSuggestion(BaseModel):
     technician_id: int
     technician_name: str

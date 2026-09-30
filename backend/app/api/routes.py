@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, PublicCustomerFeedback, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import delete_report_image, report_bytes, save_report_image
@@ -557,6 +557,17 @@ def customer_feedback(task_id: int, payload: CustomerFeedback, db: Db, user: Cur
     task.customer_rating = payload.rating
     task.customer_feedback = payload.feedback
     task.customer_signature = payload.signature
+    db.commit(); db.refresh(task)
+    return task
+
+
+@router.post("/public/tasks/customer-feedback", response_model=TaskPublic)
+def public_customer_feedback(payload: PublicCustomerFeedback, db: Db):
+    """Customer-facing feedback endpoint; phone verification avoids exposing task IDs."""
+    task = db.scalar(select(Task).where(Task.task_number == payload.task_number, Task.customer_phone == payload.customer_phone))
+    if not task:
+        raise HTTPException(404, "بيانات المهمة أو رقم الجوال غير صحيحة")
+    task.customer_rating = payload.rating; task.customer_feedback = payload.feedback; task.customer_signature = payload.signature
     db.commit(); db.refresh(task)
     return task
 
