@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ColumnDef, SortingState, VisibilityState, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from "@tanstack/react-table";
-import { Download, Pencil, Trash2 } from "lucide-react";
+import { Download, MapPin, Pencil, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 
-export type Task = { id: number; task_number: string; technician_name: string; subscription_number: string; task_type: string; task_status: string; city?: string; notes?: string; execution_date: string };
+export type Task = { id: number; task_number: string; technician_name: string; subscription_number: string; task_type: string; task_status: string; city?: string; notes?: string; execution_date: string; latitude?: number; longitude?: number };
 type TaskPage = { items: Task[]; total: number; page: number; page_size: number };
 const PAGE_SIZE = 25;
 
@@ -25,7 +25,7 @@ export function TaskTable() {
   const columns = useMemo<ColumnDef<Task>[]>(() => [
     { accessorKey: "task_number", header: "رقم المهمة" }, { accessorKey: "technician_name", header: "الفني" }, { accessorKey: "subscription_number", header: "الاشتراك" }, { accessorKey: "task_type", header: "النوع" },
     { accessorKey: "task_status", header: "الحالة", cell: ({ getValue }) => <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs dark:bg-slate-800">{String(getValue())}</span> }, { accessorKey: "execution_date", header: "التاريخ" },
-    { id: "actions", header: "", cell: ({ row }) => <div className="flex gap-1"><button type="button" onClick={() => setEditing(row.original)} className="rounded p-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950" aria-label="تعديل"><Pencil size={16} /></button><button type="button" onClick={() => remove(row.original)} className="rounded p-1.5 text-red-600 hover:bg-red-50" aria-label="حذف"><Trash2 size={16} /></button></div> },
+    { id: "actions", header: "", cell: ({ row }) => <div className="flex gap-1">{row.original.latitude != null && row.original.longitude != null && <a href={`https://www.google.com/maps/search/?api=1&query=${row.original.latitude},${row.original.longitude}`} target="_blank" rel="noreferrer" className="rounded p-1.5 text-emerald-600 hover:bg-emerald-50" aria-label="فتح الموقع"><MapPin size={16} /></a>}<button type="button" onClick={() => setEditing(row.original)} className="rounded p-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950" aria-label="تعديل"><Pencil size={16} /></button><button type="button" onClick={() => remove(row.original)} className="rounded p-1.5 text-red-600 hover:bg-red-50" aria-label="حذف"><Trash2 size={16} /></button></div> },
   ], []);
   const table = useReactTable({ data: data?.items ?? [], columns, state: { sorting, columnVisibility }, onSortingChange: setSorting, onColumnVisibilityChange: setColumnVisibility, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel() });
   async function remove(task: Task) { if (!window.confirm(`حذف المهمة ${task.task_number}؟`)) return; try { await api(`/tasks/${task.id}`, { method: "DELETE" }); setMessage("تم حذف المهمة."); client.invalidateQueries({ queryKey: ["tasks"] }); } catch { setMessage("تعذر حذف المهمة. تحتاج صلاحية مسؤول."); } }
