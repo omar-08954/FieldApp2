@@ -113,6 +113,15 @@ class TaskMaterialUsage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class TechnicianLocation(Base):
+    __tablename__ = "technician_locations"
+    technician_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    accuracy: Mapped[float | None] = mapped_column(Float)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class DailyReport(Base):
     __tablename__ = "daily_reports"
     id: Mapped[int] = mapped_column(primary_key=True)

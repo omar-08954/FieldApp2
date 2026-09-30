@@ -138,6 +138,18 @@ class TaskMaterialUsagePublic(BaseModel):
     created_at: datetime
 
 
+class LocationUpdate(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy: float | None = Field(default=None, ge=0)
+
+
+class TechnicianLocationPublic(LocationUpdate):
+    technician_id: int
+    technician_name: str
+    recorded_at: datetime
+
+
 class AssignmentCreate(BaseModel):
     technician_id: int
     task_number: str = Field(min_length=1, max_length=120)

@@ -9,9 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
-from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TaskMaterialUsage, TechnicianAlias, User
+from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TaskMaterialUsage, TechnicianAlias, TechnicianLocation, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, PublicCustomerFeedback, RefreshRequest, TaskCreate, TaskMaterialUsageCreate, TaskMaterialUsagePublic, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LocationUpdate, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, PublicCustomerFeedback, RefreshRequest, TaskCreate, TaskMaterialUsageCreate, TaskMaterialUsagePublic, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianLocationPublic, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import delete_report_image, report_bytes, save_report_image
@@ -63,6 +63,22 @@ def refresh(data: RefreshRequest, db: Db):
 
 @router.get("/auth/me", response_model=UserPublic)
 def me(user: CurrentUser): return user
+
+
+@router.post("/technician/location", status_code=204)
+def update_technician_location(payload: LocationUpdate, db: Db, user: User = Depends(require_roles(Role.TECHNICIAN))):
+    location = db.get(TechnicianLocation, user.id)
+    if location:
+        location.latitude, location.longitude, location.accuracy, location.recorded_at = payload.latitude, payload.longitude, payload.accuracy, datetime.now(UTC)
+    else:
+        db.add(TechnicianLocation(technician_id=user.id, latitude=payload.latitude, longitude=payload.longitude, accuracy=payload.accuracy))
+    db.commit()
+
+
+@router.get("/technician/locations", response_model=list[TechnicianLocationPublic])
+def technician_locations(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+    rows = db.execute(select(TechnicianLocation, User.full_name).join(User, User.id == TechnicianLocation.technician_id).where(User.is_active.is_(True)).order_by(TechnicianLocation.recorded_at.desc())).all()
+    return [{"technician_id": location.technician_id, "technician_name": name, "latitude": location.latitude, "longitude": location.longitude, "accuracy": location.accuracy, "recorded_at": location.recorded_at} for location, name in rows]
 
 
 @router.post("/auth/change-password", status_code=204)

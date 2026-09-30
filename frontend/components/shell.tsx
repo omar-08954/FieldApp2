@@ -51,6 +51,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (user?.role !== "technician") return;
     void api("/messages/daily-report", { method: "POST" }).catch(() => undefined);
   }, [user?.id, user?.role]);
+  useEffect(() => {
+    if (user?.role !== "technician" || !navigator.geolocation) return;
+    let timer: number | undefined;
+    const sendLocation = () => navigator.geolocation.getCurrentPosition(position => { void api("/technician/location", { method: "POST", body: JSON.stringify({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }) }).catch(() => undefined); }, () => undefined, { enableHighAccuracy: false, timeout: 6000, maximumAge: 120_000 });
+    sendLocation(); timer = window.setInterval(sendLocation, 60_000);
+    return () => { if (timer) window.clearInterval(timer); };
+  }, [user?.id, user?.role]);
   const unreadCount = notificationPage?.unread_count ?? 0;
   const logout = () => { clearToken(); router.replace("/login"); };
   if (!accessToken || userLoading) return <main className="grid min-h-screen place-items-center p-6 text-sm text-slate-500">جارٍ التحقق من الجلسة…</main>;
