@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, ChevronLeft, ClipboardList, Code2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, Moon, Package, Settings, ShieldCheck, Sun, UserCog, Users, Wrench, X } from "lucide-react";
+import { Bot, ChevronLeft, ClipboardList, Code2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, MessageCircle, Moon, Package, Settings, ShieldCheck, Sun, UserCog, Users, Wrench, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -15,12 +15,12 @@ import { NotificationCenter } from "./notification-center";
 const links = [
   ["لوحة التحكم", "/dashboard", LayoutDashboard, "admin"], ["لوحة المدير", "/admin", ShieldCheck, "admin"],
   ["المهام", "/tasks", ClipboardList, "admin"], ["صفحة الفني", "/technician", Wrench, "technician"],
-  ["التقارير", "/reports", FileSpreadsheet, "all"], ["المستودع", "/inventory", Package, "admin"],
+  ["التقارير", "/reports", FileSpreadsheet, "all"], ["الرسائل", "/messages", MessageCircle, "all"], ["المستودع", "/inventory", Package, "admin"],
   ["إدارة المستخدمين", "/users", Users, "admin"], ["مركز المطور", "/developer", Code2, "admin"],
   ["مراجعة الاستيراد", "/imports", UserCog, "admin"], ["الإعدادات", "/settings", Settings, "all"],
 ] as const;
 
-type CurrentUser = { full_name: string; role: string };
+type CurrentUser = { id: number; full_name: string; role: string };
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname(); const router = useRouter(); const { resolvedTheme, setTheme } = useTheme();
@@ -47,6 +47,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
       router.replace("/dashboard");
     }
   }, [accessToken, pathname, router, user?.role, userError, userQueryError]);
+  useEffect(() => {
+    if (user?.role !== "technician") return;
+    void api("/messages/daily-report", { method: "POST" }).catch(() => undefined);
+  }, [user?.id, user?.role]);
   const unreadCount = notificationPage?.unread_count ?? 0;
   const logout = () => { clearToken(); router.replace("/login"); };
   if (!accessToken || userLoading) return <main className="grid min-h-screen place-items-center p-6 text-sm text-slate-500">جارٍ التحقق من الجلسة…</main>;

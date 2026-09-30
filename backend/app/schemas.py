@@ -249,6 +249,23 @@ class NotificationPage(Page[NotificationPublic]):
     unread_count: int
 
 
+class MessagePublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    technician_id: int
+    sender_id: int | None
+    sender_name: str
+    body: str
+    message_type: str
+    report_date: date | None
+    created_at: datetime
+
+
+class MessageCreate(BaseModel):
+    technician_id: int | None = None
+    body: str = Field(min_length=1, max_length=4000)
+
+
 class AssistantMessage(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 

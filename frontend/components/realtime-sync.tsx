@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { apiBase } from "@/lib/api";
 import { currentUser, token } from "@/lib/auth";
 
-const invalidatedQueries = ["summary", "tasks", "assignments", "notifications", "import-reviews", "users", "materials", "daily-reports"];
+const invalidatedQueries = ["summary", "tasks", "assignments", "notifications", "import-reviews", "users", "materials", "daily-reports", "messages"];
 
 function getWebSocketEndpoint(): string | null {
   try {
@@ -42,7 +42,7 @@ export function RealtimeSync({ client }: { client: QueryClient }) {
           if (targeted && payload.title && payload.message && typeof window !== "undefined") {
             window.dispatchEvent(new CustomEvent("fieldapp:notification", { detail: { title: payload.title, message: payload.message } }));
           }
-          const related = name.startsWith("notification") ? ["notifications"] : name.startsWith("task") ? ["summary", "tasks", "task-report"] : name.startsWith("import") ? ["summary", "import-reviews"] : name.startsWith("assignment") ? ["assignments", "completed-assignments"] : name.startsWith("daily_report") ? ["daily-reports"] : ["summary"];
+          const related = name.startsWith("message") ? ["messages", "notifications"] : name.startsWith("notification") ? ["notifications"] : name.startsWith("task") ? ["summary", "tasks", "task-report"] : name.startsWith("import") ? ["summary", "import-reviews"] : name.startsWith("assignment") ? ["assignments", "completed-assignments"] : name.startsWith("daily_report") ? ["daily-reports"] : ["summary"];
           related.forEach(queryKey => client.invalidateQueries({ queryKey: [queryKey] }));
         } catch {
           invalidatedQueries.forEach(queryKey => client.invalidateQueries({ queryKey: [queryKey] }));

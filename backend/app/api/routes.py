@@ -9,9 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
-from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Notification, Role, Task, TechnicianAlias, User
+from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, NotificationPage, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import delete_report_image, report_bytes, save_report_image
@@ -560,6 +560,75 @@ def read_all_notifications(db: Db, user: CurrentUser):
     updated = db.query(Notification).filter(Notification.user_id == user.id, Notification.is_read.is_(False)).update({Notification.is_read: True}, synchronize_session=False)
     db.commit()
     return {"ok": True, "updated": updated}
+
+
+def message_public(message: Message, names: dict[int, str]) -> dict:
+    return {
+        "id": message.id, "technician_id": message.technician_id,
+        "sender_id": message.sender_id, "sender_name": names.get(message.sender_id or 0, "النظام"),
+        "body": message.body, "message_type": message.message_type,
+        "report_date": message.report_date, "created_at": message.created_at,
+    }
+
+
+@router.get("/messages", response_model=list[MessagePublic])
+def messages(db: Db, user: CurrentUser, technician_id: int | None = None):
+    if user.role == Role.TECHNICIAN:
+        technician_id = user.id
+    if not technician_id:
+        raise HTTPException(422, "اختر فنيًا لعرض المحادثة")
+    technician = db.get(User, technician_id)
+    if not technician or technician.role != Role.TECHNICIAN:
+        raise HTTPException(404, "الفني غير موجود")
+    rows = db.scalars(select(Message).where(Message.technician_id == technician_id).order_by(Message.created_at.asc(), Message.id.asc()).limit(200)).all()
+    sender_ids = {row.sender_id for row in rows if row.sender_id}
+    names = {row.id: row.full_name for row in db.scalars(select(User).where(User.id.in_(sender_ids))).all()} if sender_ids else {}
+    return [message_public(row, names) for row in rows]
+
+
+@router.post("/messages", response_model=MessagePublic, status_code=201)
+async def send_message(payload: MessageCreate, db: Db, user: CurrentUser):
+    technician_id = user.id if user.role == Role.TECHNICIAN else payload.technician_id
+    if not technician_id:
+        raise HTTPException(422, "اختر الفني قبل إرسال الرسالة")
+    technician = db.get(User, technician_id)
+    if not technician or technician.role != Role.TECHNICIAN:
+        raise HTTPException(404, "الفني غير موجود")
+    message = Message(technician_id=technician_id, sender_id=user.id, body=payload.body.strip())
+    db.add(message)
+    db.flush()
+    recipients = [technician_id] if user.role == Role.ADMIN else [row.id for row in db.scalars(select(User).where(User.role == Role.ADMIN, User.is_active.is_(True))).all()]
+    db.add_all([Notification(user_id=recipient, event_type="message_received", title="رسالة جديدة", message=f"رسالة من {user.full_name}") for recipient in recipients])
+    db.commit(); db.refresh(message)
+    await broker.publish("message.created", {"id": message.id, "technician_id": technician_id, "user_ids": recipients, "title": "رسالة جديدة", "message": f"رسالة من {user.full_name}"})
+    return message_public(message, {user.id: user.full_name})
+
+
+@router.post("/messages/daily-report", response_model=MessagePublic, status_code=201)
+async def send_daily_report(db: Db, user: CurrentUser, report_date: date | None = None):
+    """Create/update the technician's report message from the same Task data used by reports."""
+    if user.role != Role.TECHNICIAN:
+        raise HTTPException(403, "التقرير اليومي متاح للفني فقط")
+    target_date = report_date or date.today()
+    tasks_today = db.scalars(select(Task).where(Task.technician_id == user.id, Task.execution_date == target_date).order_by(Task.id.asc())).all()
+    counts: dict[str, int] = {}
+    for task in tasks_today:
+        counts[task.task_status] = counts.get(task.task_status, 0) + 1
+    details = "\n".join(f"• {task.task_number} — {task.task_type} — {task.task_status}" for task in tasks_today) or "لا توجد مهام مسجلة لهذا اليوم."
+    body = f"تقرير المهام اليومي — {target_date.isoformat()}\nإجمالي المهام: {len(tasks_today)}\n" + "، ".join(f"{key}: {value}" for key, value in counts.items()) + f"\n{details}"
+    message = db.scalar(select(Message).where(Message.technician_id == user.id, Message.message_type == "daily_report", Message.report_date == target_date))
+    first_report = message is None
+    if message:
+        message.body = body
+    else:
+        message = Message(technician_id=user.id, sender_id=None, body=body, message_type="daily_report", report_date=target_date)
+        db.add(message); db.flush()
+    admins = [row.id for row in db.scalars(select(User).where(User.role == Role.ADMIN, User.is_active.is_(True))).all()]
+    if first_report:
+        db.add_all([Notification(user_id=admin_id, event_type="daily_report_message", title="تقرير يومي جديد", message=f"أرسل {user.full_name} تقرير مهام {target_date.isoformat()}") for admin_id in admins])
+    db.commit(); db.refresh(message)
+    await broker.publish("message.created", {"id": message.id, "technician_id": user.id, "user_ids": admins if first_report else [], "title": "تقرير يومي جديد", "message": f"أرسل {user.full_name} تقرير مهام اليوم"})
+    return message_public(message, {})
 
 
 @router.post("/daily-reports", status_code=201)
