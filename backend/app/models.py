@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from enum import StrEnum
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -48,6 +48,14 @@ class Task(Base):
     task_status: Mapped[str] = mapped_column(String(80), default=TaskStatus.INSPECTED)
     city: Mapped[str | None] = mapped_column(String(120))
     notes: Mapped[str | None] = mapped_column(Text)
+    customer_name: Mapped[str | None] = mapped_column(String(200))
+    customer_phone: Mapped[str | None] = mapped_column(String(40))
+    customer_signature: Mapped[str | None] = mapped_column(Text)
+    customer_rating: Mapped[int | None] = mapped_column(Integer)
+    customer_feedback: Mapped[str | None] = mapped_column(Text)
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     execution_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, ChevronLeft, ClipboardList, Code2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, MessageCircle, Moon, Package, Settings, ShieldCheck, Sun, UserCog, Users, Wrench, X } from "lucide-react";
+import { Activity, Bot, ChevronLeft, ClipboardList, Code2, FileSpreadsheet, LayoutDashboard, LogOut, Menu, MessageCircle, Moon, Package, Settings, ShieldCheck, Sun, UserCog, Users, Wrench, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -15,7 +15,7 @@ import { NotificationCenter } from "./notification-center";
 const links = [
   ["لوحة التحكم", "/dashboard", LayoutDashboard, "admin"], ["لوحة المدير", "/admin", ShieldCheck, "admin"],
   ["المهام", "/tasks", ClipboardList, "admin"], ["صفحة الفني", "/technician", Wrench, "technician"],
-  ["التقارير", "/reports", FileSpreadsheet, "all"], ["الرسائل", "/messages", MessageCircle, "all"], ["المستودع", "/inventory", Package, "admin"],
+  ["التقارير", "/reports", FileSpreadsheet, "all"], ["الرسائل", "/messages", MessageCircle, "all"], ["الذكاء التشغيلي", "/analytics", Activity, "admin"], ["المستودع", "/inventory", Package, "admin"],
   ["إدارة المستخدمين", "/users", Users, "admin"], ["مركز المطور", "/developer", Code2, "admin"],
   ["مراجعة الاستيراد", "/imports", UserCog, "admin"], ["الإعدادات", "/settings", Settings, "all"],
 ] as const;
@@ -28,7 +28,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const accessToken = token();
   const { data: notificationPage } = useQuery({ queryKey: ["notifications"], queryFn: () => api<{ items: { id:number; is_read:boolean }[]; unread_count:number }>("/notifications?page_size=30"), enabled: Boolean(token()), staleTime: 15_000 });
   const { data: user, isLoading: userLoading, isError: userError, error: userQueryError } = useQuery({ queryKey: ["current-user"], queryFn: () => api<CurrentUser>("/auth/me"), initialData: currentUser() ?? undefined, staleTime: 60_000, enabled: Boolean(accessToken), retry: false });
-  const adminOnlyPaths = ["/", "/dashboard", "/tasks", "/admin", "/inventory", "/users", "/developer", "/imports"];
+  const adminOnlyPaths = ["/", "/dashboard", "/tasks", "/admin", "/analytics", "/inventory", "/users", "/developer", "/imports"];
   const technicianOnlyPaths = ["/technician"];
   useEffect(() => {
     if (!accessToken) {

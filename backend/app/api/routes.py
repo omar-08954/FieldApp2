@@ -1,7 +1,7 @@
 import json
 import logging
 import hmac
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, WebSocket
 from fastapi.responses import Response
 from sqlalchemy import delete, func, select
@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import delete_report_image, report_bytes, save_report_image
@@ -504,6 +504,20 @@ def assignments(db: Db, user: CurrentUser, technician_id: int | None = None, com
     return db.scalars(statement.order_by(AssignedTask.assigned_date.desc())).all()
 
 
+@router.get("/assignments/suggestions", response_model=list[TechnicianSuggestion])
+def assignment_suggestions(db: Db, city: str | None = None, _: User = Depends(require_roles(Role.ADMIN))):
+    """Rank active technicians by current workload and city match for smart dispatch."""
+    technicians = db.scalars(select(User).where(User.role == Role.TECHNICIAN, User.is_active.is_(True))).all()
+    loads = dict(db.execute(select(AssignedTask.technician_id, func.count()).where(AssignedTask.completed_at.is_(None)).group_by(AssignedTask.technician_id)).all())
+    suggestions = []
+    for technician in technicians:
+        load = int(loads.get(technician.id, 0))
+        city_match = bool(city and technician.city and normalized_city(technician.city) == normalized_city(city))
+        score = round(load - (3 if city_match else 0) + (1 if city and not city_match else 0), 2)
+        suggestions.append(TechnicianSuggestion(technician_id=technician.id, technician_name=technician.full_name, city=technician.city, active_assignments=load, score=score))
+    return sorted(suggestions, key=lambda row: (row.score, row.technician_name))
+
+
 @router.post("/assignments", response_model=AssignmentPublic, status_code=201)
 async def assign(payload: AssignmentCreate, db: Db, user: User = Depends(require_roles(Role.ADMIN))):
     if not db.get(User, payload.technician_id): raise HTTPException(422, "الفني غير موجود")
@@ -530,6 +544,35 @@ async def complete_assignment(assignment_id: int, db: Db, user: CurrentUser, pay
     db.refresh(assignment)
     await broker.publish("assignment.completed", {"id": assignment.id})
     return assignment
+
+
+@router.post("/tasks/{task_id}/customer-feedback", response_model=TaskPublic)
+def customer_feedback(task_id: int, payload: CustomerFeedback, db: Db, user: CurrentUser):
+    """Store the customer's rating/signature after the technician completes a task."""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(404, "المهمة غير موجودة")
+    if user.role == Role.TECHNICIAN and task.technician_id != user.id:
+        raise HTTPException(403, "لا تملك صلاحية تحديث هذه المهمة")
+    task.customer_rating = payload.rating
+    task.customer_feedback = payload.feedback
+    task.customer_signature = payload.signature
+    db.commit(); db.refresh(task)
+    return task
+
+
+@router.get("/analytics/operations", response_model=OperationsAnalytics)
+def operations_analytics(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
+    now = datetime.now(UTC)
+    total = db.scalar(select(func.count()).select_from(Task)) or 0
+    completed = db.scalar(select(func.count()).select_from(Task).where(Task.task_status == "مزال")) or 0
+    overdue = db.scalar(select(func.count()).select_from(Task).where(Task.due_at.is_not(None), Task.due_at < now, Task.task_status != "مزال")) or 0
+    average = db.scalar(select(func.avg(Task.customer_rating)).where(Task.customer_rating.is_not(None)))
+    rows = db.execute(
+        select(Task.technician_id, Task.technician_name, func.count().label("total"), func.sum(func.cast(Task.task_status == "مزال", Integer)).label("completed"))
+        .where(Task.technician_id.is_not(None)).group_by(Task.technician_id, Task.technician_name).order_by(func.count().desc()).limit(20)
+    ).all()
+    return OperationsAnalytics(total_tasks=total, completed_tasks=completed, overdue_tasks=overdue, average_rating=round(float(average), 2) if average is not None else None, technician_load=[{"technician_id": row[0], "technician_name": row[1], "total": row[2], "completed": int(row[3] or 0)} for row in rows])
 
 
 @router.get("/notifications", response_model=NotificationPage)

@@ -44,6 +44,14 @@ class TaskCreate(BaseModel):
     task_status: str = "تم الفحص"
     city: str | None = None
     notes: str | None = None
+    customer_name: str | None = Field(default=None, max_length=200)
+    customer_phone: str | None = Field(default=None, max_length=40)
+    customer_signature: str | None = None
+    customer_rating: int | None = Field(default=None, ge=1, le=5)
+    customer_feedback: str | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    due_at: datetime | None = None
     execution_date: date | None = None
 
 
@@ -63,6 +71,14 @@ class TaskUpdate(BaseModel):
     task_status: str | None = Field(default=None, max_length=80)
     city: str | None = Field(default=None, max_length=120)
     notes: str | None = None
+    customer_name: str | None = Field(default=None, max_length=200)
+    customer_phone: str | None = Field(default=None, max_length=40)
+    customer_signature: str | None = None
+    customer_rating: int | None = Field(default=None, ge=1, le=5)
+    customer_feedback: str | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    due_at: datetime | None = None
     execution_date: date | None = None
 
 
@@ -130,6 +146,28 @@ class AssignmentPublic(AssignmentCreate):
 class AssignmentComplete(BaseModel):
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+
+
+class CustomerFeedback(BaseModel):
+    signature: str | None = None
+    rating: int = Field(ge=1, le=5)
+    feedback: str | None = Field(default=None, max_length=2000)
+
+
+class TechnicianSuggestion(BaseModel):
+    technician_id: int
+    technician_name: str
+    city: str | None
+    active_assignments: int
+    score: float
+
+
+class OperationsAnalytics(BaseModel):
+    total_tasks: int
+    completed_tasks: int
+    overdue_tasks: int
+    average_rating: float | None
+    technician_load: list[dict]
 
 
 class DailyReportPublic(BaseModel):
