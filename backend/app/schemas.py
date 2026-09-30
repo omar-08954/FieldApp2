@@ -200,6 +200,7 @@ class OperationsAnalytics(BaseModel):
     overdue_tasks: int
     average_rating: float | None
     technician_load: list[dict]
+    leaderboard: list[dict]
 
 
 class DailyReportPublic(BaseModel):

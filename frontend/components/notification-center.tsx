@@ -21,7 +21,10 @@ export function NotificationCenter() {
       const detail = (event as CustomEvent<{ title: string; message: string }>).detail;
       setToast(detail);
       window.setTimeout(() => setToast(undefined), 6000);
-      if ("Notification" in window && Notification.permission === "granted") new Notification(detail.title, { body: detail.message, icon: "/logo.png" });
+      if ("Notification" in window && Notification.permission === "granted") {
+        if ("serviceWorker" in navigator) void navigator.serviceWorker.ready.then(registration => registration.showNotification(detail.title, { body: detail.message, icon: "/logo.png", dir: "rtl", lang: "ar" }));
+        else new Notification(detail.title, { body: detail.message, icon: "/logo.png" });
+      }
       client.invalidateQueries({ queryKey: ["notifications"] });
     };
     window.addEventListener("fieldapp:notification", handler);

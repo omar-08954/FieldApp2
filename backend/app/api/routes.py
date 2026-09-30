@@ -630,7 +630,15 @@ def operations_analytics(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
         select(Task.technician_id, Task.technician_name, func.count().label("total"), func.sum(func.cast(Task.task_status == "مزال", Integer)).label("completed"))
         .where(Task.technician_id.is_not(None)).group_by(Task.technician_id, Task.technician_name).order_by(func.count().desc()).limit(20)
     ).all()
-    return OperationsAnalytics(total_tasks=total, completed_tasks=completed, overdue_tasks=overdue, average_rating=round(float(average), 2) if average is not None else None, technician_load=[{"technician_id": row[0], "technician_name": row[1], "total": row[2], "completed": int(row[3] or 0)} for row in rows])
+    technician_load = [{"technician_id": row[0], "technician_name": row[1], "total": row[2], "completed": int(row[3] or 0)} for row in rows]
+    leaderboard = []
+    for item in technician_load:
+        rating = db.scalar(select(func.avg(Task.customer_rating)).where(Task.technician_id == item["technician_id"], Task.customer_rating.is_not(None))) or 0
+        on_time = db.scalar(select(func.count()).select_from(Task).where(Task.technician_id == item["technician_id"], Task.task_status == "مزال", Task.due_at.is_not(None), Task.updated_at <= Task.due_at)) or 0
+        points = item["completed"] * 10 + int(float(rating) * 5) + on_time * 3
+        leaderboard.append({"technician_id": item["technician_id"], "technician_name": item["technician_name"], "points": points, "completed": item["completed"], "rating": round(float(rating), 2) if rating else None})
+    leaderboard.sort(key=lambda item: (-item["points"], -item["completed"], item["technician_name"]))
+    return OperationsAnalytics(total_tasks=total, completed_tasks=completed, overdue_tasks=overdue, average_rating=round(float(average), 2) if average is not None else None, technician_load=technician_load, leaderboard=leaderboard)
 
 
 @router.get("/notifications", response_model=NotificationPage)
