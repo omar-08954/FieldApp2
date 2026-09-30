@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ColumnDef, SortingState, VisibilityState, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from "@tanstack/react-table";
 import { Download, Pencil, Trash2 } from "lucide-react";
@@ -13,12 +13,14 @@ const PAGE_SIZE = 25;
 export function TaskTable() {
   const client = useQueryClient();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [editing, setEditing] = useState<Task>();
   const [message, setMessage] = useState("");
-  const { data, isLoading, isError } = useQuery({ queryKey: ["tasks", page, search], queryFn: () => api<TaskPage>(`/tasks?page=${page}&page_size=${PAGE_SIZE}&search=${encodeURIComponent(search)}`) });
+  useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400); return () => window.clearTimeout(timer); }, [search]);
+  const { data, isLoading, isError } = useQuery({ queryKey: ["tasks", page, debouncedSearch], queryFn: () => api<TaskPage>(`/tasks?page=${page}&page_size=${PAGE_SIZE}&search=${encodeURIComponent(debouncedSearch)}`) });
   const pages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
   const columns = useMemo<ColumnDef<Task>[]>(() => [
     { accessorKey: "task_number", header: "رقم المهمة" }, { accessorKey: "technician_name", header: "الفني" }, { accessorKey: "subscription_number", header: "الاشتراك" }, { accessorKey: "task_type", header: "النوع" },

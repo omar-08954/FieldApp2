@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 type Task = { id: number; task_number: string; technician_name: string; subscription_number: string; task_type: string; task_status: string; city?: string; execution_date: string };
@@ -7,9 +7,10 @@ type TaskPage = { items: Task[]; total: number; page: number; page_size: number 
 type ColumnKey = "task_number" | "technician_name" | "subscription_number" | "task_type" | "task_status" | "city" | "execution_date";
 const columns: { key: ColumnKey; label: string }[] = [{ key: "task_number", label: "رقم المهمة" }, { key: "technician_name", label: "الفني" }, { key: "subscription_number", label: "رقم الاشتراك" }, { key: "task_type", label: "نوع المهمة" }, { key: "task_status", label: "حالة المهمة" }, { key: "city", label: "المدينة" }, { key: "execution_date", label: "التاريخ" }];
 export function TaskManagementTable() {
-  const client = useQueryClient(); const [page, setPage] = useState(1); const [search, setSearch] = useState(""); const [searchField, setSearchField] = useState("all"); const [selected, setSelected] = useState<number[]>([]); const [message, setMessage] = useState(""); const [busy, setBusy] = useState("");
+  const client = useQueryClient(); const [page, setPage] = useState(1); const [search, setSearch] = useState(""); const [debouncedSearch, setDebouncedSearch] = useState(""); const [searchField, setSearchField] = useState("all"); const [selected, setSelected] = useState<number[]>([]); const [message, setMessage] = useState(""); const [busy, setBusy] = useState("");
+  useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400); return () => window.clearTimeout(timer); }, [search]);
   const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>(Object.fromEntries(columns.map(column => [column.key, true])) as Record<ColumnKey, boolean>);
-  const { data, isLoading, isError } = useQuery({ queryKey: ["tasks", page, search, searchField], queryFn: () => api<TaskPage>(`/tasks?page=${page}&page_size=25&search=${encodeURIComponent(search)}&search_field=${encodeURIComponent(searchField)}`) });
+  const { data, isLoading, isError } = useQuery({ queryKey: ["tasks", page, debouncedSearch, searchField], queryFn: () => api<TaskPage>(`/tasks?page=${page}&page_size=25&search=${encodeURIComponent(debouncedSearch)}&search_field=${encodeURIComponent(searchField)}`) });
   const rows = data?.items ?? []; const pages = Math.max(1, Math.ceil((data?.total ?? 0) / 25)); const allSelected = rows.length > 0 && rows.every(row => selected.includes(row.id)); const chosen = columns.filter(column => visibleColumns[column.key]);
   const toggle = (id: number) => setSelected(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]); const toggleAll = () => setSelected(allSelected ? [] : rows.map(row => row.id));
   async function remove(path: string, text: string) { setBusy(path); try { await api(path, { method: "DELETE" }); setSelected([]); setMessage(text); client.invalidateQueries({ queryKey: ["tasks"] }); } catch (error) { setMessage(error instanceof Error ? error.message : "تعذر تنفيذ الحذف."); } finally { setBusy(""); } }

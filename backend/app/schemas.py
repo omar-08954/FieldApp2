@@ -245,6 +245,10 @@ class NotificationPublic(BaseModel):
     created_at: datetime
 
 
+class NotificationPage(Page[NotificationPublic]):
+    unread_count: int
+
+
 class AssistantMessage(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 

@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Notification, Role, Task, TechnicianAlias, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, NotificationPage, NotificationPublic, Page, PasswordChange, RefreshRequest, TaskCreate, TaskPublic, TaskReportSummary, TaskUpdate, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
 from app.services.report_storage import delete_report_image, report_bytes, save_report_image
@@ -97,8 +97,8 @@ async def create_task(payload: TaskCreate, db: Db, user: CurrentUser, idempotenc
     values.update(technician_id=user.id, technician_name=user.full_name, city=normalized_city(user.city or values.get("city") or ""), idempotency_key=idempotency_key)
     values["task_number"] = task_number
     task = Task(**values); db.add(task); db.flush(); audit(db, user, "create", "task", task.id, f"task_number={task.task_number}"); db.commit(); db.refresh(task)
-    notify_roles(db, (Role.ADMIN,), "task_created", "مهمة جديدة", f"تمت إضافة المهمة {task.task_number}"); db.commit()
-    await broker.publish("task.created", {"id": task.id, "actor": user.full_name})
+    recipients = notify_roles(db, (Role.ADMIN,), "task_created", "مهمة جديدة", f"تمت إضافة المهمة {task.task_number}"); db.commit()
+    await broker.publish("task.created", {"id": task.id, "actor": user.full_name, "user_ids": recipients, "title": "مهمة جديدة", "message": f"تمت إضافة المهمة {task.task_number}"})
     return task
 
 
@@ -117,9 +117,9 @@ async def update_task(task_id: int, payload: TaskUpdate, db: Db, user: User = De
     audit(db, user, "update", "task", task.id, "task updated")
     db.commit()
     db.refresh(task)
-    notify_roles(db, (Role.ADMIN,), "task_updated", "تم تعديل مهمة", f"تم تعديل المهمة {task.task_number}")
+    recipients = notify_roles(db, (Role.ADMIN,), "task_updated", "تم تعديل مهمة", f"تم تعديل المهمة {task.task_number}")
     db.commit()
-    await broker.publish("task.updated", {"id": task.id, "actor": user.full_name})
+    await broker.publish("task.updated", {"id": task.id, "actor": user.full_name, "user_ids": recipients, "title": "تم تعديل مهمة", "message": f"تم تعديل المهمة {task.task_number}"})
     return task
 
 
@@ -156,8 +156,8 @@ async def excel_import(db: Db, user: User = Depends(require_roles(Role.ADMIN)), 
         raise HTTPException(413, "حجم ملف Excel يتجاوز الحد المسموح")
     batch = import_workbook(db, contents, file.filename, user.id)
     audit(db, user, "import", "workbook", batch.id, f"filename={file.filename}; imported={batch.imported_rows}; review={batch.review_rows}; skipped={batch.skipped_rows}")
-    notify_roles(db, (Role.ADMIN,), "import_completed", "اكتمل استيراد Excel", f"تم استيراد {batch.imported_rows} صف ومراجعة {batch.review_rows} صف وتجاهل {batch.skipped_rows} صف."); db.commit()
-    await broker.publish("import.completed", {"batch_id": batch.id, "imported": batch.imported_rows, "review": batch.review_rows, "skipped": batch.skipped_rows})
+    recipients = notify_roles(db, (Role.ADMIN,), "import_completed", "اكتمل استيراد Excel", f"تم استيراد {batch.imported_rows} صف ومراجعة {batch.review_rows} صف وتجاهل {batch.skipped_rows} صف."); db.commit()
+    await broker.publish("import.completed", {"batch_id": batch.id, "imported": batch.imported_rows, "review": batch.review_rows, "skipped": batch.skipped_rows, "user_ids": recipients, "title": "اكتمل استيراد Excel", "message": f"تم استيراد {batch.imported_rows} صف ومراجعة {batch.review_rows} صف."})
     return ImportResult(batch_id=batch.id, total_rows=batch.total_rows, imported_rows=batch.imported_rows, review_rows=batch.review_rows, skipped_rows=batch.skipped_rows)
 
 
@@ -422,9 +422,9 @@ async def create_user(payload: UserCreate, db: Db, actor: User = Depends(require
     from app.core.security import hash_password
     user = User(username=payload.username, password_hash=hash_password(payload.password), full_name=payload.full_name, role=payload.role, city=payload.city)
     db.add(user); db.flush(); audit(db, actor, "create", "user", user.id, f"username={user.username}"); db.commit(); db.refresh(user)
-    notify_roles(db, (Role.ADMIN,), "user_created", "مستخدم جديد", f"تمت إضافة المستخدم {user.full_name}")
+    recipients = notify_roles(db, (Role.ADMIN,), "user_created", "مستخدم جديد", f"تمت إضافة المستخدم {user.full_name}")
     db.commit()
-    await broker.publish("user.created", {"id": user.id})
+    await broker.publish("user.created", {"id": user.id, "user_ids": recipients, "title": "مستخدم جديد", "message": f"تمت إضافة المستخدم {user.full_name}"})
     return user
 
 
@@ -509,7 +509,7 @@ async def assign(payload: AssignmentCreate, db: Db, user: User = Depends(require
     if not db.get(User, payload.technician_id): raise HTTPException(422, "الفني غير موجود")
     assignment = AssignedTask(**payload.model_dump(exclude_none=True), assigned_by_id=user.id); db.add(assignment); db.flush(); audit(db, user, "create", "assignment", assignment.id, f"task_number={assignment.task_number}"); db.commit(); db.refresh(assignment)
     db.add(Notification(user_id=assignment.technician_id, event_type="task_assigned", title="مهمة مسندة", message=f"أُسندت إليك المهمة {assignment.task_number}")); db.commit()
-    await broker.publish("assignment.created", {"id": assignment.id, "technician_id": assignment.technician_id})
+    await broker.publish("assignment.created", {"id": assignment.id, "technician_id": assignment.technician_id, "user_ids": [assignment.technician_id], "title": "مهمة مسندة", "message": f"أُسندت إليك المهمة {assignment.task_number}"})
     return assignment
 
 
@@ -532,9 +532,20 @@ async def complete_assignment(assignment_id: int, db: Db, user: CurrentUser, pay
     return assignment
 
 
-@router.get("/notifications", response_model=list[NotificationPublic])
-def notifications(db: Db, user: CurrentUser):
-    return db.scalars(select(Notification).where(Notification.user_id == user.id).order_by(Notification.created_at.desc()).limit(100)).all()
+@router.get("/notifications", response_model=NotificationPage)
+def notifications(db: Db, user: CurrentUser, page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100), unread_only: bool = False):
+    filters = [Notification.user_id == user.id]
+    if unread_only:
+        filters.append(Notification.is_read.is_(False))
+    total = db.scalar(select(func.count()).select_from(Notification).where(*filters)) or 0
+    unread_count = db.scalar(select(func.count()).select_from(Notification).where(Notification.user_id == user.id, Notification.is_read.is_(False))) or 0
+    rows = db.scalars(select(Notification).where(*filters).order_by(Notification.created_at.desc(), Notification.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
+    return {"items": rows, "total": total, "page": page, "page_size": page_size, "unread_count": unread_count}
+
+
+@router.get("/notifications/unread-count")
+def unread_notification_count(db: Db, user: CurrentUser):
+    return {"count": db.scalar(select(func.count()).select_from(Notification).where(Notification.user_id == user.id, Notification.is_read.is_(False))) or 0}
 
 
 @router.post("/notifications/{notification_id}/read")
@@ -542,6 +553,13 @@ def read_notification(notification_id: int, db: Db, user: CurrentUser):
     notification = db.get(Notification, notification_id)
     if not notification or notification.user_id != user.id: raise HTTPException(404, "الإشعار غير موجود")
     notification.is_read = True; db.commit(); return {"ok": True}
+
+
+@router.post("/notifications/read-all")
+def read_all_notifications(db: Db, user: CurrentUser):
+    updated = db.query(Notification).filter(Notification.user_id == user.id, Notification.is_read.is_(False)).update({Notification.is_read: True}, synchronize_session=False)
+    db.commit()
+    return {"ok": True, "updated": updated}
 
 
 @router.post("/daily-reports", status_code=201)
