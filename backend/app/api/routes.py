@@ -79,7 +79,8 @@ def update_technician_location(payload: LocationUpdate, db: Db, user: User = Dep
 @router.get("/technician/locations", response_model=list[TechnicianLocationPublic])
 def technician_locations(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     rows = db.execute(select(TechnicianLocation, User.full_name).join(User, User.id == TechnicianLocation.technician_id).where(User.is_active.is_(True)).order_by(TechnicianLocation.recorded_at.desc())).all()
-    return [{"technician_id": location.technician_id, "technician_name": name, "latitude": location.latitude, "longitude": location.longitude, "accuracy": location.accuracy, "recorded_at": location.recorded_at} for location, name in rows]
+    loads = dict(db.execute(select(AssignedTask.technician_id, func.count()).where(AssignedTask.completed_at.is_(None)).group_by(AssignedTask.technician_id)).all())
+    return [{"technician_id": location.technician_id, "technician_name": name, "latitude": location.latitude, "longitude": location.longitude, "accuracy": location.accuracy, "active_assignments": int(loads.get(location.technician_id, 0)), "recorded_at": location.recorded_at} for location, name in rows]
 
 
 @router.post("/auth/change-password", status_code=204)

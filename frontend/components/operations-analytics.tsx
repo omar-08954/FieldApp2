@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Gauge, Star } from "lucide-react";
 import { api } from "@/lib/api";
 
 type Analytics = { total_tasks: number; completed_tasks: number; overdue_tasks: number; average_rating: number | null; technician_load: { technician_id: number; technician_name: string; total: number; completed: number }[]; leaderboard: { technician_id: number; technician_name: string; points: number; completed: number; rating: number | null }[] };
-type Location = { technician_id: number; technician_name: string; latitude: number; longitude: number; accuracy: number | null; recorded_at: string };
+type Location = { technician_id: number; technician_name: string; latitude: number; longitude: number; accuracy: number | null; active_assignments: number; recorded_at: string };
 
 export function OperationsAnalytics() {
   const { data, isLoading, isError } = useQuery({ queryKey: ["operations-analytics"], queryFn: () => api<Analytics>("/analytics/operations"), refetchInterval: 60_000 });

@@ -147,6 +147,7 @@ class LocationUpdate(BaseModel):
 class TechnicianLocationPublic(LocationUpdate):
     technician_id: int
     technician_name: str
+    active_assignments: int
     recorded_at: datetime
 
 
