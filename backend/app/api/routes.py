@@ -4,7 +4,7 @@ import hmac
 from datetime import UTC, date, datetime, timedelta
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, WebSocket
 from fastapi.responses import Response
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
@@ -386,8 +386,8 @@ def developer_status(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
 @router.get("/performance/technicians")
 def technician_performance(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
     technicians = db.scalars(select(User).where(User.role == Role.TECHNICIAN).order_by(User.full_name)).all()
-    assignment_rows = db.execute(select(AssignedTask.technician_id, func.count().label("assigned"), func.count(AssignedTask.completed_at).label("completed")).group_by(AssignedTask.technician_id)).mappings().all()
-    task_rows = db.execute(select(Task.technician_id, func.count().label("recorded"), func.sum(func.cast(Task.task_status == "عائق", Integer)).label("blocked")).group_by(Task.technician_id)).mappings().all()
+    assignment_rows = db.execute(select(AssignedTask.technician_id, func.count().label("assigned"), func.sum(case((AssignedTask.completed_at.is_not(None), 1), else_=0)).label("completed")).group_by(AssignedTask.technician_id)).mappings().all()
+    task_rows = db.execute(select(Task.technician_id, func.count().label("recorded"), func.sum(case((Task.task_status == "عائق", 1), else_=0)).label("blocked")).group_by(Task.technician_id)).mappings().all()
     assignments = {row["technician_id"]: row for row in assignment_rows}
     tasks = {row["technician_id"]: row for row in task_rows}
     result = []
@@ -629,7 +629,7 @@ def operations_analytics(db: Db, _: User = Depends(require_roles(Role.ADMIN))):
         db.commit()
     average = db.scalar(select(func.avg(Task.customer_rating)).where(Task.customer_rating.is_not(None)))
     rows = db.execute(
-        select(Task.technician_id, Task.technician_name, func.count().label("total"), func.sum(func.cast(Task.task_status == "مزال", Integer)).label("completed"))
+        select(Task.technician_id, Task.technician_name, func.count().label("total"), func.sum(case((Task.task_status == "مزال", 1), else_=0)).label("completed"))
         .where(Task.technician_id.is_not(None)).group_by(Task.technician_id, Task.technician_name).order_by(func.count().desc()).limit(20)
     ).all()
     technician_load = [{"technician_id": row[0], "technician_name": row[1], "total": row[2], "completed": int(row[3] or 0)} for row in rows]
