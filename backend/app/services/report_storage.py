@@ -49,6 +49,30 @@ async def save_report_image(technician_id: int, report_date: str, file: UploadFi
     return key, mime
 
 
+async def save_task_image(task_id: int, photo_type: str, file: UploadFile) -> tuple[str, str]:
+    content = await file.read()
+    if len(content) > settings.max_upload_bytes: raise ValueError("حجم الصورة يتجاوز الحد المسموح")
+    mime = file.content_type or ""
+    if photo_type not in {"before", "after"} or mime not in {"image/jpeg", "image/png"} or not (content.startswith(b"\xff\xd8\xff") or content.startswith(b"\x89PNG\r\n\x1a\n")):
+        raise ValueError("يجب رفع صورة JPEG أو PNG صالحة وتحديد نوع الصورة")
+    extension = "jpg" if mime == "image/jpeg" else "png"
+    digest = hashlib.sha256(content).hexdigest()[:16]
+    key = f"task-images/{task_id}/{photo_type}-{digest}-{uuid4().hex[:8]}.{extension}"
+    if settings.uses_supabase_storage:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(_storage_url(key), content=content, headers={**_storage_headers(mime), "x-upsert": "true"})
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ValueError(f"تعذر حفظ صورة المهمة (HTTP {exc.response.status_code}).") from exc
+        except httpx.RequestError as exc:
+            raise ValueError("تعذر الوصول إلى تخزين الصور.") from exc
+    else:
+        path = Path(settings.uploads_dir) / key
+        path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
+    return key, mime
+
+
 async def delete_report_image(key: str) -> None:
     """Best-effort cleanup for an image replaced or deleted by an operator."""
     if settings.uses_supabase_storage:

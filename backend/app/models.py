@@ -62,6 +62,16 @@ class Task(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class TaskPhoto(Base):
+    __tablename__ = "task_photos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    photo_type: Mapped[str] = mapped_column(String(20))
+    image_key: Mapped[str] = mapped_column(String(500))
+    image_mime: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AssignedTask(Base):
     __tablename__ = "assigned_tasks"
     id: Mapped[int] = mapped_column(primary_key=True)

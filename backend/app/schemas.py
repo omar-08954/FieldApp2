@@ -63,6 +63,15 @@ class TaskPublic(TaskCreate):
     updated_at: datetime | None
 
 
+class TaskPhotoPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    task_id: int
+    photo_type: str
+    image_mime: str
+    created_at: datetime
+
+
 class TaskUpdate(BaseModel):
     technician_id: int | None = None
     technician_name: str | None = Field(default=None, max_length=200)

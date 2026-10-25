@@ -9,12 +9,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.deps import CurrentUser, Db, require_roles
 from app.core.config import get_settings
 from app.core.security import create_token, decode_token, hash_password, verify_password
-from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TaskMaterialUsage, TechnicianAlias, TechnicianLocation, User
+from app.models import AssignedTask, AuditLog, DailyReport, ImportReview, Material, MaterialMovement, Message, Notification, Role, Task, TaskMaterialUsage, TaskPhoto, TechnicianAlias, TechnicianLocation, User
 from app.repositories import TaskRepository, UserRepository
-from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LocationUpdate, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, PublicCustomerFeedback, RefreshRequest, TaskCreate, TaskMaterialUsageCreate, TaskMaterialUsagePublic, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianLocationPublic, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
+from app.schemas import AssignmentComplete, AssignmentCreate, AssignmentPublic, AssistantMessage, AssistantReply, CleanupRequest, CustomerFeedback, DailyReportPublic, DashboardSummary, DeveloperStatus, ImportBulkTechnicianRepair, ImportResult, ImportReviewPublic, ImportReviewRepair, LocationUpdate, LoginRequest, MaterialCreate, MaterialMovementPublic, MaterialPublic, MessageCreate, MessagePublic, NotificationPage, NotificationPublic, OperationsAnalytics, Page, PasswordChange, PublicCustomerFeedback, RefreshRequest, TaskCreate, TaskMaterialUsageCreate, TaskMaterialUsagePublic, TaskPhotoPublic, TaskPublic, TaskReportSummary, TaskUpdate, TechnicianLocationPublic, TechnicianSuggestion, TokenPair, UserCreate, UserPublic, UserUpdate
 from app.services.assistant import ask
 from app.services.notifications import notify_roles
-from app.services.report_storage import delete_report_image, report_bytes, save_report_image
+from app.services.report_storage import delete_report_image, report_bytes, save_report_image, save_task_image
 from app.services.report_analysis import analyze_report
 from app.services.events import broker
 from app.services.importer import DEFAULT_STATUS, DEFAULT_SUBSCRIPTION, _city, _normalized, import_workbook, match_technician
@@ -149,6 +149,43 @@ async def delete_task(task_id: int, db: Db, user: User = Depends(require_roles(R
     db.delete(task)
     audit(db, user, "delete", "task", task_id, "task deleted")
     db.commit()
+
+
+@router.post("/tasks/{task_id}/photos", response_model=TaskPhotoPublic, status_code=201)
+async def upload_task_photo(task_id: int, db: Db, user: CurrentUser, photo_type: str = Query(...), image: UploadFile = File(...)):
+    task = db.get(Task, task_id)
+    if not task or (user.role == Role.TECHNICIAN and task.technician_id != user.id):
+        raise HTTPException(404, "المهمة غير موجودة")
+    try:
+        key, mime = await save_task_image(task_id, photo_type, image)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    old = db.scalar(select(TaskPhoto).where(TaskPhoto.task_id == task_id, TaskPhoto.photo_type == photo_type))
+    old_key = old.image_key if old else None
+    photo = old or TaskPhoto(task_id=task_id, photo_type=photo_type, image_key=key, image_mime=mime)
+    if old: old.image_key, old.image_mime = key, mime
+    else: db.add(photo)
+    db.commit(); db.refresh(photo)
+    if old_key: await delete_report_image(old_key)
+    return photo
+
+
+@router.get("/tasks/{task_id}/photos", response_model=list[TaskPhotoPublic])
+def task_photos(task_id: int, db: Db, user: CurrentUser):
+    task = db.get(Task, task_id)
+    if not task or (user.role == Role.TECHNICIAN and task.technician_id != user.id):
+        raise HTTPException(404, "المهمة غير موجودة")
+    return db.scalars(select(TaskPhoto).where(TaskPhoto.task_id == task_id).order_by(TaskPhoto.created_at.desc())).all()
+
+
+@router.get("/tasks/{task_id}/photos/{photo_id}")
+def task_photo_image(task_id: int, photo_id: int, db: Db, user: CurrentUser):
+    task = db.get(Task, task_id); photo = db.get(TaskPhoto, photo_id)
+    if not task or not photo or photo.task_id != task_id or (user.role == Role.TECHNICIAN and task.technician_id != user.id):
+        raise HTTPException(404, "الصورة غير موجودة")
+    try: content = report_bytes(photo.image_key)
+    except FileNotFoundError: raise HTTPException(404, "ملف الصورة غير موجود")
+    return Response(content=content, media_type=photo.image_mime)
 
 
 @router.delete("/tasks", status_code=204)
