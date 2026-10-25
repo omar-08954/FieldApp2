@@ -20,6 +20,7 @@ export const apiBase = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
 export const apiRoot = apiBase.replace(/\/api\/v1$/, "");
 export type Summary = { total_tasks: number; completion_rate: number; delayed_tasks: number; needs_review: number; by_status: { label: string; value: number }[]; daily_trend: { label: string; value: number }[]; latest_tasks: { id:number; task_number:string; technician_name:string; task_status:string; execution_date:string }[]; top_technicians: { label:string; value:number }[] };
 type ApiErrorPayload = { detail?: string };
+const offlineCacheKey = (path: string) => `fieldapp.api-cache:${path}`;
 
 async function responseError(response: Response): Promise<Error> {
   const payload = await response.json().catch(() => null) as ApiErrorPayload | null;
@@ -43,7 +44,17 @@ export async function api<T>(path: string, init?: RequestInit, retried = false):
   const headers = new Headers(init?.headers);
   if (!(init?.body instanceof FormData) && init?.body) headers.set("Content-Type", "application/json");
   for (const [name, value] of Object.entries(authHeaders())) headers.set(name, value);
-  const response = await fetch(`${apiBase}${path}`, { ...init, headers });
+  const cacheable = (init?.method ?? "GET").toUpperCase() === "GET";
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}${path}`, { ...init, headers });
+  } catch (error) {
+    if (cacheable && typeof window !== "undefined") {
+      const cached = window.localStorage.getItem(offlineCacheKey(path));
+      if (cached) return JSON.parse(cached) as T;
+    }
+    throw error;
+  }
   if (response.status === 401 && !retried && await renewSession()) return api<T>(path, init, true);
   if (response.status === 401) {
     clearToken();
@@ -51,5 +62,7 @@ export async function api<T>(path: string, init?: RequestInit, retried = false):
   }
   if (!response.ok) throw await responseError(response);
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  const data = await response.json() as T;
+  if (cacheable && typeof window !== "undefined") window.localStorage.setItem(offlineCacheKey(path), JSON.stringify(data));
+  return data;
 }

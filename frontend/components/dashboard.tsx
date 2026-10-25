@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, ClipboardList, ScanSearch } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle2, ClipboardList, RefreshCw, ScanSearch } from "lucide-react";
 
 import { api, Summary } from "@/lib/api";
 
@@ -28,7 +29,7 @@ function maxValue(items: { value: number }[]): number {
 }
 
 export function Dashboard() {
-  const { data = empty } = useQuery({
+  const { data = empty, refetch, isFetching } = useQuery({
     queryKey: ["summary"],
     queryFn: () => api<Summary>("/dashboard/summary"),
   });
@@ -44,6 +45,7 @@ export function Dashboard() {
           <h1 className="text-3xl font-bold tracking-tight">صباح الخير، فريق العمل</h1>
           <p className="mt-2 text-slate-500">نظرة حية على الأداء والمهام الميدانية.</p>
         </div>
+        <button type="button" onClick={() => void refetch()} disabled={isFetching} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50"><RefreshCw size={16} className={isFetching ? "animate-spin" : ""} />{isFetching ? "جارٍ التحديث…" : "تحديث البيانات"}</button>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -61,6 +63,12 @@ export function Dashboard() {
             </div>
           </article>
         ))}
+      </section>
+
+      <section className="mt-5 grid gap-3 sm:grid-cols-3">
+        <Link href="/tasks" className="panel transition hover:-translate-y-0.5 hover:border-brand"><p className="text-sm text-slate-500">إدارة العمليات</p><p className="mt-1 font-bold">عرض كل المهام ←</p></Link>
+        <Link href="/reports" className="panel transition hover:-translate-y-0.5 hover:border-brand"><p className="text-sm text-slate-500">التقارير والتحليلات</p><p className="mt-1 font-bold">فتح التقارير ←</p></Link>
+        <Link href="/notifications" className="panel transition hover:-translate-y-0.5 hover:border-brand"><p className="text-sm text-slate-500">المتابعة</p><p className="mt-1 font-bold">عرض التنبيهات ←</p></Link>
       </section>
 
       <section className="mt-5 grid gap-5 xl:grid-cols-[1.7fr_1fr]">

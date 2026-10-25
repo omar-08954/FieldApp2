@@ -1,6 +1,7 @@
-const CACHE = "fieldapp-shell-v1";
-self.addEventListener("install", event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(["/", "/login"])).then(() => self.skipWaiting())); });
-self.addEventListener("activate", event => { event.waitUntil(self.clients.claim()); });
+const CACHE = "fieldapp-shell-v2";
+const ROUTES = ["/", "/login", "/dashboard", "/tasks", "/technician", "/reports", "/notifications", "/manifest.webmanifest", "/favicon.ico"];
+self.addEventListener("install", event => { event.waitUntil(caches.open(CACHE).then(cache => Promise.all(ROUTES.map(url => fetch(url).then(response => response.ok && cache.put(url, response)).catch(() => undefined)))).then(() => self.skipWaiting())); });
+self.addEventListener("activate", event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())); });
 self.addEventListener("sync", event => { if (event.tag === "fieldapp-sync") event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(clients => clients.forEach(client => client.postMessage({ type: "fieldapp:sync" })))); });
 self.addEventListener("fetch", event => {
   const request = event.request;

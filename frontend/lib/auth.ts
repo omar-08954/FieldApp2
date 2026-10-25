@@ -1,17 +1,15 @@
 const key = "fieldapp.access_token";
 const refreshKey = "fieldapp.refresh_token";
 const userKey = "fieldapp.current_user";
-const storage = () => window.sessionStorage;
+// Keep the session available when the installed PWA is reopened offline.
+const storage = () => window.localStorage;
 export type CachedUser = { id: number; username: string; full_name: string; role: string; city?: string | null };
 export const token = () => {
   if (typeof window === "undefined") return null;
-  // Remove tokens created by older releases so reopening the app cannot reuse them.
-  window.localStorage.removeItem(key);
   return storage().getItem(key);
 };
 export const refreshToken = () => {
   if (typeof window === "undefined") return null;
-  window.localStorage.removeItem(refreshKey);
   return storage().getItem(refreshKey);
 };
 export const authHeaders = (): Record<string, string> => {
