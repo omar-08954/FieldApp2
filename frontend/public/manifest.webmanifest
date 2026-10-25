@@ -9,6 +9,6 @@
   "dir": "rtl",
   "lang": "ar",
   "icons": [
-    { "src": "/logo.png", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/favicon.png", "sizes": "64x64", "type": "image/png", "purpose": "any maskable" }
   ]
 }
