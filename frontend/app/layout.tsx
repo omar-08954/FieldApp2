@@ -7,9 +7,9 @@ export const metadata: Metadata = {
   description: "Enterprise field operations",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/favicon.png",
+    icon: "/favicon.ico?v=2",
+    shortcut: "/favicon.ico?v=2",
+    apple: "/apple-icon.png?v=2",
   },
   appleWebApp: { capable: true, title: "FieldApp", statusBarStyle: "default" },
   formatDetection: { telephone: false },
