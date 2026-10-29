@@ -24,7 +24,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("GEMINI_API_KEY", "AI_API_KEY"),
     )
-    ai_model: str = "gemini-2.5-flash"
+    ai_model: str = "gemini-3.8-flash"
     uploads_dir: str = "uploads"
     logs_dir: str = "logs"
     log_max_bytes: int = 10 * 1024 * 1024
