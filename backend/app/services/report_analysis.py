@@ -23,6 +23,13 @@ async def analyze_report(image: bytes, mime: str) -> str:
             response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         return str(content).strip() or "لم ينتج التحليل نصًا مفيدًا."
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "Report image analysis provider request failed: status=%s body=%s",
+            exc.response.status_code,
+            exc.response.text[:2000],
+        )
+        raise RuntimeError("تعذر تحليل صورة التقرير حاليًا.") from exc
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-        logger.exception("Report image analysis failed")
+        logger.exception("Report image analysis response could not be processed")
         raise RuntimeError("تعذر تحليل صورة التقرير حاليًا.") from exc

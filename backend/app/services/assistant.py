@@ -30,6 +30,13 @@ async def ask(db: Session, question: str) -> str:
             response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         return str(content).strip() or "لم أتمكن من إنشاء إجابة مفيدة."
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-        logger.exception("AI assistant provider request failed")
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "AI assistant provider request failed: status=%s body=%s",
+            exc.response.status_code,
+            exc.response.text[:2000],
+        )
+        return "تعذر الاتصال بالمساعد الذكي حالياً. تم تسجيل المشكلة، ويمكنك المحاولة لاحقاً."
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+        logger.exception("AI assistant provider response could not be processed")
         return "تعذر الاتصال بالمساعد الذكي حالياً. تم تسجيل المشكلة، ويمكنك المحاولة لاحقاً."
