@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,9 +19,12 @@ class Settings(BaseSettings):
     initial_admin_name: str = "أحمد شاهين"
     default_technician_password: str = ""
     ai_enabled: bool = False
-    ai_base_url: str = "https://api.openai.com/v1"
-    ai_api_key: str = ""
-    ai_model: str = "gpt-4.1-mini"
+    ai_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    ai_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GEMINI_API_KEY", "AI_API_KEY"),
+    )
+    ai_model: str = "gemini-2.5-flash"
     uploads_dir: str = "uploads"
     logs_dir: str = "logs"
     log_max_bytes: int = 10 * 1024 * 1024

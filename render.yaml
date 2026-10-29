@@ -32,6 +32,14 @@ services:
         value: fieldapp-reports
       - key: WHATSAPP_WORKER_SECRET
         sync: false
+      - key: AI_ENABLED
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
+      - key: AI_MODEL
+        value: gemini-2.5-flash
 
   - type: web
     name: fieldapp-frontend-static
