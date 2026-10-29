@@ -21,6 +21,14 @@ def _context(db: Session) -> str:
 
 
 async def ask(db: Session, question: str) -> str:
+    # Answer simple factual questions directly from the database. This avoids
+    # spending an AI request for values the application already knows exactly.
+    normalized_question = question.strip().lower()
+    task_count_phrases = ("عدد المهام", "إجمالي المهام", "المهام الموجودة", "كم مهمة")
+    if any(phrase in normalized_question for phrase in task_count_phrases):
+        total = db.scalar(select(func.count()).select_from(Task)) or 0
+        return f"عدد المهام الموجودة في قاعدة بيانات التطبيق هو {total} مهمة."
+
     if not settings.ai_enabled or not settings.ai_api_key:
         return "المساعد الذكي غير مفعّل بعد. أضف إعدادات AI في بيئة الخادم ليصبح متاحاً."
     payload = {"model": settings.ai_model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "system", "content": _context(db)}, {"role": "user", "content": question}], "temperature": 0.2}
